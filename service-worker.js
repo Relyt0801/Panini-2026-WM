@@ -1,5 +1,5 @@
 /* Panini WM 2026 Tracker – Service Worker (App-Shell offline-fähig) */
-const CACHE = "panini-wm2026-v9";
+const CACHE = "panini-wm2026-v10";
 const SHELL = [
   "./styles.css",
   "./data.js",

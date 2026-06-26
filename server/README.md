@@ -23,8 +23,10 @@ Im App-Tab **Tauschen → Tauschgruppe (live)** als Server-Adresse
    Build Command leer lassen, Start Command `node index.js`.)*
 3. Nach dem Deploy bekommst du eine URL wie
    `https://panini-tauschserver.onrender.com`.
-4. Diese URL in der App unter **Tauschen → Tauschgruppe → Server-Adresse**
-   eintragen, Anzeigenamen + Gruppen-Code setzen, **Beitreten**.
+4. Diese URL ist in der App **fest hinterlegt** (Konstante `TRADE_SERVER` in
+   `trade.js`). Nutzer müssen also **keine Adresse eingeben** – nur Anzeigename
+   + Lobby-Code unter **Tauschen → Live-Lobby**. Deployst du unter einer anderen
+   URL, passe `TRADE_SERVER` in `trade.js` einmalig an.
 
 > Hinweis: Auf dem Render-Free-Plan schläft der Dienst nach Inaktivität ein und
 > braucht beim ersten Aufruf ein paar Sekunden. Der Gruppen-Stand wird in

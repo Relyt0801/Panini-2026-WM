@@ -11,10 +11,13 @@
 /* ---------------------------------------------------------------------- *
  * State & Helfer
  * ---------------------------------------------------------------------- */
+// Fest hinterlegter Tauschserver (Render) – Nutzer müssen keine Adresse eingeben.
+const TRADE_SERVER = "https://panini-tauschserver.onrender.com";
+
 function ensureTradeState() {
   if (!STATE.trade) STATE.trade = {};
   const t = STATE.trade;
-  if (typeof t.serverUrl !== "string") t.serverUrl = "";
+  t.serverUrl = TRADE_SERVER;                 // immer der feste Server
   if (!("group" in t)) t.group = null;       // { id, name, code }
   if (!t.identity) t.identity = null;         // { id, name }
   if (!Array.isArray(t.requests)) t.requests = []; // persistierte Anfragen (Option 2)
@@ -160,10 +163,10 @@ function viewHome() {
     <button class="trade-opt" data-act="go" data-view="${grp ? "on-group" : "on-setup"}">
       <span class="trade-opt-ic">🌐</span>
       <span class="trade-opt-tx">
-        <b>Tauschgruppe (live)</b>
+        <b>Live-Lobby</b>
         <small>${grp
-          ? `Gruppe „${escapeHtml(grp.name)}“ – Mitglieder, Anfragen & Live-Tausch.`
-          : "Einer Gruppe beitreten: tauschbare Karten sehen, Anfragen senden, live tauschen."}</small>
+          ? `Lobby „${escapeHtml(grp.name)}“ – Mitglieder, Anfragen & Live-Tausch.`
+          : "Einer Lobby beitreten: tauschbare Karten sehen, Anfragen senden, live tauschen."}</small>
       </span>
       <span class="trade-opt-chev">›</span>
     </button>`;
@@ -440,30 +443,29 @@ function viewOnSetup() {
   const t = STATE.trade;
   return `
     ${backBar("home")}
-    <h3 class="trade-h">Tauschgruppe beitreten</h3>
-    <p class="muted small">Tritt einer Gruppe bei – die Mitgliedschaft bleibt bestehen, bis du sie verlässt.
-      Du brauchst die Server-Adresse (Render) und einen Gruppen-Code, den ihr euch absprecht.</p>
-    <div class="field"><label>Server-Adresse</label>
-      <input id="srvUrl" type="url" value="${escapeAttr(t.serverUrl)}" placeholder="https://dein-server.onrender.com" /></div>
+    <h3 class="trade-h">Lobby beitreten</h3>
+    <p class="muted small">Gib deinen Namen und einen Lobby-Code ein. Wer denselben Code nutzt, landet in
+      derselben Lobby – jede Lobby ist getrennt. Die Mitgliedschaft bleibt bestehen, bis du sie verlässt.</p>
     <div class="field"><label>Dein Anzeigename</label>
       <input id="srvName" type="text" value="${escapeAttr(t.identity ? t.identity.name : "")}" placeholder="z. B. Tyler" /></div>
-    <div class="field"><label>Gruppen-Code</label>
+    <div class="field"><label>Lobby-Code</label>
       <input id="srvGroup" type="text" value="${escapeAttr(t.group ? t.group.code : "")}" placeholder="z. B. wm2026-freunde" /></div>
     <div class="trade-actions">
-      <button class="btn btn-primary" data-act="join-group">Beitreten / Erstellen</button>
+      <button class="btn btn-primary" data-act="join-group">Lobby beitreten / erstellen</button>
     </div>
-    <p class="muted small">Tipp: Server-Code & Anleitung liegen im Ordner <code>server/</code> des Projekts.</p>`;
+    <p class="muted small">Verbindet sich automatisch mit dem Tauschserver. Beim ersten Mal kann es ein paar
+      Sekunden dauern, bis der Server aufwacht.</p>`;
 }
 
 async function joinGroup() {
-  const url = document.getElementById("srvUrl").value.trim();
   const name = document.getElementById("srvName").value.trim();
   const code = document.getElementById("srvGroup").value.trim();
-  if (!url || !name || !code) { toast("Bitte alle Felder ausfüllen"); return; }
-  STATE.trade.serverUrl = url;
+  if (!name || !code) { toast("Bitte Namen und Lobby-Code angeben"); return; }
+  STATE.trade.serverUrl = TRADE_SERVER;
   const id = (STATE.trade.identity && STATE.trade.identity.id) || ("m_" + Math.random().toString(36).slice(2, 10));
   STATE.trade.identity = { id, name };
   save();
+  toast("Verbinde mit Lobby …");
   try {
     const res = await api("/api/group/join", {
       method: "POST",
@@ -543,7 +545,7 @@ function viewOnGroup() {
   return `
     ${backBar("home")}
     <div class="trade-group-head">
-      <div><h3 class="trade-h">Gruppe „${escapeHtml(g.name)}“</h3>
+      <div><h3 class="trade-h">Lobby „${escapeHtml(g.name)}“</h3>
         <span class="muted small">Code: ${escapeHtml(g.code)} · du: ${escapeHtml(STATE.trade.identity.name)}</span></div>
       <button class="btn btn-danger trade-btn" data-act="leave-group">Verlassen</button>
     </div>
@@ -771,7 +773,7 @@ function executeTrade(rid) {
 }
 
 async function leaveGroup() {
-  if (!confirm("Gruppe wirklich verlassen? Offene Anfragen gehen verloren.")) return;
+  if (!confirm("Lobby wirklich verlassen? Offene Anfragen gehen verloren.")) return;
   try { await api(`/api/group/${encodeURIComponent(STATE.trade.group.id)}/leave`, { method: "POST", body: JSON.stringify({ member: STATE.trade.identity.id }) }); } catch (e) {}
   STATE.trade.group = null;
   STATE.trade.requests = [];
