@@ -1,0 +1,9 @@
+# Zip-Archiv (Quell-Paket, Inhalt ist entpackt im Repo)
+*.zip
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
