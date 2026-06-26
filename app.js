@@ -344,6 +344,18 @@ function toggleTeam(code) {
 }
 
 /* ======================================================================
+ * Ansicht (untere Navbar) + Mehr-Sheet
+ * ====================================================================== */
+function setView(view) {
+  ui.view = view;
+  document.querySelectorAll("#tabbar .tab[data-view]").forEach((x) => x.classList.toggle("active", x.dataset.view === view));
+  render();
+  if (window.scrollY > 0) window.scrollTo({ top: 0, behavior: "smooth" });
+}
+function openSheet() { el("sheet").hidden = false; document.body.classList.add("no-scroll"); }
+function closeSheet() { el("sheet").hidden = true; document.body.classList.remove("no-scroll"); }
+
+/* ======================================================================
  * Modal (Name bearbeiten)
  * ====================================================================== */
 let modalSave = null;
@@ -512,8 +524,11 @@ function init() {
   el("searchClear").onclick = () => { el("searchInput").value = ""; ui.search = ""; el("searchClear").hidden = true; render(); el("searchInput").focus(); };
   el("sortSelect").onchange = (e) => { ui.sort = e.target.value; render(); };
 
-  document.querySelectorAll("#viewSeg .seg-btn").forEach((b) => {
-    b.onclick = () => { ui.view = b.dataset.view; document.querySelectorAll("#viewSeg .seg-btn").forEach((x) => x.classList.toggle("active", x === b)); render(); };
+  // Untere Navbar: Ansicht wechseln + Mehr-Sheet öffnen
+  el("tabbar").addEventListener("click", (e) => {
+    const b = e.target.closest(".tab"); if (!b) return;
+    if (b.dataset.act === "more") { openSheet(); return; }
+    if (b.dataset.view) setView(b.dataset.view);
   });
 
   el("sections").addEventListener("click", onSectionsClick);
@@ -521,15 +536,20 @@ function init() {
   el("btnCollapse").onclick = () => { SECTIONS.forEach((s) => (STATE.collapsed[s.code] = true)); save(); render(); };
   el("btnCopyList").onclick = copyList;
 
-  el("btnExport").onclick = exportData;
-  el("btnImport").onclick = importData;
-  el("btnReset").onclick = resetAll;
+  el("btnExport").onclick = () => { exportData(); closeSheet(); };
+  el("btnImport").onclick = () => { importData(); closeSheet(); };
+  el("btnReset").onclick = () => { closeSheet(); resetAll(); };
+
+  // Mehr-Sheet schließen
+  el("sheetClose").onclick = closeSheet;
+  el("sheet").addEventListener("click", (e) => { if (e.target === el("sheet")) closeSheet(); });
 
   el("modalCancel").onclick = closeModal;
   el("modalSave").onclick = () => { if (modalSave && modalSave() !== false) closeModal(); };
   el("modal").addEventListener("click", (e) => { if (e.target === el("modal")) closeModal(); });
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && !el("modal").hidden) closeModal();
+    else if (e.key === "Escape" && !el("sheet").hidden) closeSheet();
     if (e.key === "Enter" && !el("modal").hidden && e.target.tagName === "INPUT") el("modalSave").click();
     if (e.key === "/" && document.activeElement.tagName !== "INPUT") { e.preventDefault(); el("searchInput").focus(); }
   });
