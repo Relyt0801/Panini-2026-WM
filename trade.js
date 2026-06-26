@@ -134,6 +134,7 @@ function renderTradeTab() {
   else if (v === "on-setup") root.innerHTML = viewOnSetup();
   else if (v === "on-group") root.innerHTML = viewOnGroup();
   else if (v === "on-request") root.innerHTML = viewOnRequest();
+  else if (v === "on-browse") root.innerHTML = viewOnBrowse();
   else if (v === "on-live") root.innerHTML = viewOnLive();
   else root.innerHTML = viewHome();
   wireTradeView();
@@ -300,13 +301,13 @@ function viewOffBuild() {
     </div>
 
     <div class="trade-block">
-      <div class="trade-block-head"><h4>Du gibst</h4><span class="trade-badge">${g}</span></div>
+      <div class="trade-block-head"><h4>Du gibst</h4><span class="trade-badge" data-tcount="give">${g}</span></div>
       <p class="muted small">Deine Doppelten, die „${escapeHtml(TRADE.partner.name)}“ fehlen.</p>
       <div class="trade-list">${buildRowsHtml(giveIds, "give", theirs)}</div>
     </div>
 
     <div class="trade-block">
-      <div class="trade-block-head"><h4>Du erhältst</h4><span class="trade-badge">${r}</span></div>
+      <div class="trade-block-head"><h4>Du erhältst</h4><span class="trade-badge" data-tcount="receive">${r}</span></div>
       <p class="muted small">Doppelte von „${escapeHtml(TRADE.partner.name)}“, die dir fehlen.</p>
       <div class="trade-list">${buildRowsHtml(recvIds, "receive", theirs)}</div>
     </div>
@@ -483,10 +484,11 @@ async function joinGroup() {
 }
 
 async function uploadCollection() {
-  // Nur tauschbare Info teilen: Doppelte (Anzahl≥2) und Lücken (fehlt)
-  const have = {}, want = {};
+  // counts = voller Bestand (für „Karten ansehen"); have/want zusätzlich für ältere Clients
+  const have = {}, want = {}, counts = {};
   for (const c of CARDS) {
     const n = STATE.counts[c.id] || 0;
+    if (n > 0) counts[c.id] = n;
     if (n >= 2) have[c.id] = n - 1;     // abgebbare Menge
     if (n === 0) want[c.id] = 1;        // fehlt mir
   }
@@ -495,7 +497,7 @@ async function uploadCollection() {
     body: JSON.stringify({
       groupId: STATE.trade.group.id,
       member: STATE.trade.identity,
-      have, want,
+      have, want, counts,
     }),
   });
 }
@@ -506,6 +508,7 @@ async function syncGroup() {
   TRADE.members = (res.members || []).filter((m) => m.id !== STATE.trade.identity.id);
   // Server-Anfragen mit lokal gespeicherten zusammenführen (lokale überleben Inaktivität)
   mergeRequests(res.requests || []);
+  autoExecutePending();   // beidseitig akzeptierte Tausche automatisch abschließen
   if (CURRENT_TAB === "trade" && (TRADE.view === "on-group" || TRADE.view === "on-live")) renderTradeTab();
 }
 
@@ -536,20 +539,19 @@ function viewOnGroup() {
         const tradeable = countMutualTradeable(m);
         return `<div class="trade-member">
           <span class="tm-name">${escapeHtml(m.name)}</span>
-          <span class="tm-count">${tradeable} passende</span>
-          <button class="btn trade-btn" data-act="open-request" data-mid="${escapeAttr(m.id)}" ${tradeable ? "" : "disabled"}>Anfrage</button>
+          <span class="tm-count">${tradeable ? `${tradeable} passende` : "0 passende"}</span>
+          <button class="btn trade-btn" data-act="open-request" data-mid="${escapeAttr(m.id)}">Ansehen</button>
         </div>`;
       }).join("")
-    : `<p class="muted small acc-empty">Noch keine anderen Mitglieder online.</p>`;
+    : `<p class="muted small acc-empty">Noch keine anderen Mitglieder. Aktualisiert sich automatisch.</p>`;
 
   return `
     ${backBar("home")}
     <div class="trade-group-head">
       <div><h3 class="trade-h">Lobby „${escapeHtml(g.name)}“</h3>
-        <span class="muted small">Code: ${escapeHtml(g.code)} · du: ${escapeHtml(STATE.trade.identity.name)}</span></div>
+        <span class="muted small">Code: ${escapeHtml(g.code)} · du: ${escapeHtml(STATE.trade.identity.name)} · 🔄 live</span></div>
       <button class="btn btn-danger trade-btn" data-act="leave-group">Verlassen</button>
     </div>
-    <button class="btn" data-act="refresh-group">↻ Aktualisieren</button>
 
     <div class="trade-block">
       <div class="trade-block-head"><h4>Mitglieder</h4><span class="trade-badge">${TRADE.members.length}</span></div>
@@ -566,11 +568,22 @@ function viewOnGroup() {
     </div>`;
 }
 
+// Mitglied finden + dessen Karten-Stand ableiten (bevorzugt volle counts)
+function memberById(id) { return TRADE.members.find((x) => x.id === id) || null; }
+function mapFromHave(have) { const c = {}; have = have || {}; for (const id in have) c[id] = have[id] + 1; return c; }
+function memberCounts(m) { return m.counts || mapFromHave(m.have); }
+function memberCountOf(m, id) { const c = memberCounts(m); return c[id] || 0; }
+// braucht das Mitglied die Karte? (fehlt ihm)
+function memberNeeds(m, id) { return m.counts ? (m.counts[id] || 0) === 0 : !!(m.want && m.want[id]); }
+
 // Wie viele Karten kann ich mit Mitglied m tauschen (Schnittmenge)?
 function countMutualTradeable(m) {
+  const theirs = memberCounts(m);
   let n = 0;
-  for (const id in (m.have || {})) if ((STATE.counts[id] || 0) === 0) n++;       // er hat, mir fehlt
-  for (const id in (m.want || {})) if ((STATE.counts[id] || 0) >= 2) n++;        // er braucht, ich doppelt
+  for (const c of CARDS) {
+    if ((theirs[c.id] || 0) >= 2 && (STATE.counts[c.id] || 0) === 0) n++;        // er doppelt, mir fehlt
+    else if ((STATE.counts[c.id] || 0) >= 2 && memberNeeds(m, c.id)) n++;        // ich doppelt, ihm fehlt
+  }
   return n;
 }
 
@@ -593,19 +606,23 @@ function reqList(reqs, dir) {
       </div>
       <div class="tr-sum">Du gibst <b>${dir === "in" ? recv : give}</b> · du erhältst <b>${dir === "in" ? give : recv}</b></div>
       <div class="tr-actions">
-        <button class="btn trade-btn" data-act="view-req" data-rid="${escapeAttr(r.id)}">Ansehen</button>
-        ${r.status !== "accepted" ? `<button class="btn btn-danger trade-btn" data-act="del-req" data-rid="${escapeAttr(r.id)}">Löschen</button>` : ""}
-        ${bothAccepted(r) ? `<button class="btn btn-primary trade-btn" data-act="live-req" data-rid="${escapeAttr(r.id)}">Live tauschen</button>` : ""}
+        <button class="btn btn-primary trade-btn" data-act="view-req" data-rid="${escapeAttr(r.id)}">Öffnen</button>
+        <button class="btn btn-danger trade-btn" data-act="del-req" data-rid="${escapeAttr(r.id)}">Löschen</button>
       </div>
     </div>`;
   }).join("");
 }
 
+function myExecuted(r) {
+  const mine = r.from === STATE.trade.identity.id ? "from" : "to";
+  return !!(r.executedBy && r.executedBy[mine]);
+}
 function statusLabel(r, dir) {
-  if (bothAccepted(r)) return "bereit";
-  if (r.status === "accepted") return "wartet auf Gegenseite";
+  if (r.status === "done" || myExecuted(r)) return "getauscht ✓";
+  if (bothAccepted(r)) return "wird abgeschlossen …";
+  if (r.status === "accepted") return dir === "in" ? "du dran: akzeptieren" : "wartet auf Gegenseite";
   if (r.status === "countered") return dir === "in" ? "Gegenangebot erhalten" : "Gegenangebot gesendet";
-  if (r.status === "open") return dir === "in" ? "offen" : "gesendet";
+  if (r.status === "open") return dir === "in" ? "neu – bitte ansehen" : "gesendet";
   return r.status;
 }
 function bothAccepted(r) { return !!(r.acceptedBy && r.acceptedBy.from && r.acceptedBy.to); }
@@ -627,37 +644,71 @@ function openRequest(memberId, existing) {
   go("on-request");
 }
 
-function partnerHaveWant() {
-  const m = TRADE.members.find((x) => x.id === TRADE.requestMember);
-  return m || { have: {}, want: {} };
-}
-
 function viewOnRequest() {
-  const m = partnerHaveWant();
-  // ich gebe: ich doppelt & er will (oder ihm fehlt) ; ich erhalte: er hat doppelt & mir fehlt
-  const giveIds = applyTradeFilter(CARDS.filter((c) => tradeCountOf(c.id) >= 2 && (m.want ? m.want[c.id] : true)).map((c) => c.id));
-  const recvIds = applyTradeFilter(CARDS.filter((c) => (m.have && m.have[c.id]) && tradeCountOf(c.id) === 0).map((c) => c.id));
+  const m = memberById(TRADE.requestMember) || { counts: {}, have: {}, want: {} };
+  const name = memberName(TRADE.requestMember);
+  const theirs = memberCounts(m);
+  // Liste 1: er hat doppelt & mir fehlt -> ich erhalte ; Liste 2: ich doppelt & ihm fehlt -> ich gebe
+  const recvIds = applyTradeFilter(CARDS.filter((c) => (theirs[c.id] || 0) >= 2 && tradeCountOf(c.id) === 0).map((c) => c.id));
+  const giveIds = applyTradeFilter(CARDS.filter((c) => tradeCountOf(c.id) >= 2 && memberNeeds(m, c.id)).map((c) => c.id));
   const { g, r } = tradeSummary();
   const editing = !!TRADE.activeReqId;
+  const nationSel = buildNationOptions().replace(`value="${TRADE.filterNation}"`, `value="${TRADE.filterNation}" selected`);
   return `
     ${backBar("on-group")}
-    <h3 class="trade-h">${editing ? "Gegenangebot an" : "Anfrage an"} „${escapeHtml(memberName(TRADE.requestMember))}“</h3>
+    <h3 class="trade-h">${editing ? "Gegenangebot an" : "Tauschen mit"} „${escapeHtml(name)}“</h3>
+    <button class="btn trade-browse-btn" data-act="browse-member" data-mid="${escapeAttr(TRADE.requestMember)}">👁 Alle Karten von ${escapeHtml(name)} ansehen</button>
     <div class="trade-filter">
-      <input id="tFilterText" type="search" placeholder="Suche …" value="${escapeAttr(TRADE.filterText)}" />
-      <select id="tFilterNation">${buildNationOptions().replace(`value="${TRADE.filterNation}"`, `value="${TRADE.filterNation}" selected`)}</select>
+      <input id="tFilterText" type="search" placeholder="Suche Nummer/Name …" value="${escapeAttr(TRADE.filterText)}" />
+      <select id="tFilterNation">${nationSel}</select>
     </div>
-    <div class="trade-block">
-      <div class="trade-block-head"><h4>Du gibst</h4><span class="trade-badge">${g}</span></div>
+    <details class="trade-drop" open>
+      <summary>Du erhältst <span class="trade-badge" data-tcount="receive">${r}</span></summary>
+      <p class="muted small">${escapeHtml(name)} hat doppelt, dir fehlt.</p>
+      <div class="trade-list">${buildRowsHtml(recvIds, "receive", theirs)}</div>
+    </details>
+    <details class="trade-drop" open>
+      <summary>Du gibst <span class="trade-badge" data-tcount="give">${g}</span></summary>
+      <p class="muted small">Du hast doppelt, ${escapeHtml(name)} fehlt.</p>
       <div class="trade-list">${buildRowsHtml(giveIds, "give", {})}</div>
-    </div>
-    <div class="trade-block">
-      <div class="trade-block-head"><h4>Du erhältst</h4><span class="trade-badge">${r}</span></div>
-      <div class="trade-list">${buildRowsHtml(recvIds, "receive", m.have || {})}</div>
-    </div>
+    </details>
     <div class="trade-confirm-bar">
       <span class="muted small">gibst <b>${g}</b> · erhältst <b>${r}</b></span>
       <button class="btn btn-primary" data-act="send-request" ${g + r === 0 ? "disabled" : ""}>${editing ? "Gegenangebot senden" : "Anfrage senden"}</button>
     </div>`;
+}
+
+// Karten eines Mitglieds – nur ansehen, nichts änderbar
+function viewOnBrowse() {
+  const m = memberById(TRADE.requestMember);
+  const name = memberName(TRADE.requestMember);
+  const nationSel = buildNationOptions().replace(`value="${TRADE.filterNation}"`, `value="${TRADE.filterNation}" selected`);
+  if (!m) {
+    return `${backBar("on-request")}<h3 class="trade-h">Karten von „${escapeHtml(name)}“</h3>
+      <p class="muted small">Mitglied nicht mehr da.</p>`;
+  }
+  const ids = tradeSort(applyTradeFilter(CARDS.map((c) => c.id)));
+  const ownedN = ids.filter((id) => memberCountOf(m, id) > 0).length;
+  const rows = ids.map((id) => {
+    const c = cardById[id];
+    const cnt = memberCountOf(m, id);
+    const nm = (STATE.names[id] != null ? STATE.names[id] : c.name) || c.role || "—";
+    const tag = cnt >= 2 ? `<span class="trade-ct">×${cnt}</span>`
+      : cnt === 1 ? `<span class="b-have">hat</span>`
+      : `<span class="b-miss">fehlt</span>`;
+    return `<div class="row ${cnt > 0 ? "owned" : ""}" data-readonly="1">
+      <span class="r-num">${escapeHtml(c.label)}</span>
+      <span class="r-name">${escapeHtml(nm)}</span>${tag}</div>`;
+  }).join("");
+  return `
+    ${backBar("on-request")}
+    <h3 class="trade-h">Karten von „${escapeHtml(name)}“</h3>
+    <p class="muted small">Nur ansehen · ${ownedN} von ${ids.length} im Filter vorhanden.</p>
+    <div class="trade-filter">
+      <input id="tFilterText" type="search" placeholder="Suche Nummer/Name …" value="${escapeAttr(TRADE.filterText)}" />
+      <select id="tFilterNation">${nationSel}</select>
+    </div>
+    <div class="ov-list trade-browse-list">${rows || emptyHtml("Keine Karten im Filter.")}</div>`;
 }
 
 async function sendRequest() {
@@ -669,14 +720,15 @@ async function sendRequest() {
     from: STATE.trade.identity.id, to: target,
     give, receive,                       // immer aus Sicht von "from"
     status: TRADE.activeReqId ? "countered" : "open",
-    acceptedBy: {},                      // Gegenangebot setzt Zustimmung zurück
+    acceptedBy: { from: true },          // Senden = eigene Zusage; nur die Gegenseite muss noch ok geben
+    executedBy: {},                      // (Gegenangebot setzt beides zurück)
     ts: Date.now(),
   };
   // Lokal speichern (überlebt Inaktivität), dann an Server
   upsertLocalReq(req);
   try { await api("/api/request", { method: "POST", body: JSON.stringify(req) }); }
   catch (e) { toast("Lokal gespeichert – Server nicht erreichbar"); }
-  toast("Anfrage gesendet");
+  toast("Anfrage gesendet – wartet auf Zusage");
   go("on-group");
 }
 
@@ -704,8 +756,32 @@ async function acceptRequest(rid) {
   req.status = "accepted";
   upsertLocalReq(req);
   try { await api(`/api/request/${encodeURIComponent(rid)}/accept`, { method: "POST", body: JSON.stringify({ side }) }); } catch (e) {}
-  if (bothAccepted(req)) toast("Beide bereit – jetzt live tauschen");
+  if (bothAccepted(req)) autoExecutePending();   // beide ok -> sofort abschließen
   else toast("Zugesagt – warte auf Gegenseite");
+}
+
+// Beidseitig akzeptierte Tausche automatisch ausführen (jede Seite ihren Teil, genau einmal)
+function autoExecutePending() {
+  let did = false;
+  for (const req of STATE.trade.requests) {
+    if (req.status === "done" || !bothAccepted(req)) continue;
+    const mine = req.from === STATE.trade.identity.id ? "from" : "to";
+    if (req.executedBy && req.executedBy[mine]) continue;
+    const iAmFrom = mine === "from";
+    applyDeltaToSelf(iAmFrom ? req.give : req.receive, iAmFrom ? req.receive : req.give);
+    req.executedBy = Object.assign({}, req.executedBy, { [mine]: true });
+    if (req.executedBy.from && req.executedBy.to) req.status = "done";
+    upsertLocalReq(req);
+    api(`/api/request/${encodeURIComponent(req.id)}/done`, { method: "POST", body: JSON.stringify({ side: mine }) }).catch(() => {});
+    did = true;
+  }
+  if (did) {
+    save(); refreshStats();
+    uploadCollection().catch(() => {});
+    toast("Tausch abgeschlossen – Sammlung aktualisiert 🎉");
+    if (typeof burstConfetti === "function") burstConfetti();
+    if (CURRENT_TAB === "trade") go("on-group");
+  }
 }
 
 /* ---- Live-Tausch: finale Liste & Ausführung -------------------------- */
@@ -724,13 +800,14 @@ function viewOnLive() {
   const mine = iAmFrom ? "from" : "to";
   const otherSide = iAmFrom ? "to" : "from";
   const iAccepted = !!(req.acceptedBy && req.acceptedBy[mine]);
-  const otherAccepted = !!(req.acceptedBy && req.acceptedBy[otherSide]);
-  const iExecuted = !!(req.executedBy && req.executedBy[mine]);
+  const done = req.status === "done" || (req.executedBy && req.executedBy[mine]);
+  const iAmInitiator = iAmFrom && req.status !== "countered";
   return `
     ${backBar("on-group")}
-    <h3 class="trade-h">Live-Tausch mit „${escapeHtml(other)}“</h3>
-    <p class="muted small">Geht die Liste durch. Erst wenn <b>beide</b> akzeptieren, wird der Tausch ausgeführt
-      und beide Sammlungen aktualisiert.</p>
+    <h3 class="trade-h">Tausch mit „${escapeHtml(other)}“</h3>
+    <p class="muted small">${done
+      ? "Abgeschlossen – beide Sammlungen wurden aktualisiert."
+      : "Sobald <b>beide</b> zugesagt haben, wird der Tausch automatisch ausgeführt."}</p>
     <div class="trade-block">
       <div class="trade-block-head"><h4>Du gibst „${escapeHtml(other)}“</h4><span class="trade-badge">${giveIds.length}</span></div>
       <ul class="trade-mini-list">${li(giveIds, iGive)}</ul>
@@ -739,37 +816,13 @@ function viewOnLive() {
       <div class="trade-block-head"><h4>Du erhältst</h4><span class="trade-badge">${getIds.length}</span></div>
       <ul class="trade-mini-list">${li(getIds, iGet)}</ul>
     </div>
-    <div class="trade-status-row">
-      <span class="${iAccepted ? "ok" : ""}">${iAccepted ? "✓ du akzeptiert" : "○ du offen"}</span>
-      <span class="${otherAccepted ? "ok" : ""}">${otherAccepted ? "✓ Gegenseite akzeptiert" : "○ Gegenseite offen"}</span>
-    </div>
+    ${done ? `<div class="trade-done-head">✓ Tausch abgeschlossen</div>` : `
     <div class="trade-confirm-bar">
-      ${iExecuted ? "" : `<button class="btn" data-act="counter-req" data-rid="${escapeAttr(req.id)}">Gegenangebot</button>`}
-      ${iExecuted
-        ? `<span class="muted small">✓ Ausgeführt – deine Sammlung ist aktualisiert.</span>`
-        : bothAccepted(req)
-          ? `<button class="btn btn-primary" data-act="execute-req" data-rid="${escapeAttr(req.id)}">Tausch ausführen</button>`
-          : `<button class="btn btn-primary" data-act="accept-req" data-rid="${escapeAttr(req.id)}" ${iAccepted ? "disabled" : ""}>Akzeptieren</button>`}
-    </div>`;
-}
-
-function executeTrade(rid) {
-  const req = getReq(rid); if (!req) return;
-  if (!bothAccepted(req)) { toast("Noch nicht beide bereit"); return; }
-  const mine = req.from === STATE.trade.identity.id ? "from" : "to";
-  if (req.executedBy && req.executedBy[mine]) { toast("Schon ausgeführt"); return; }
-  const iAmFrom = mine === "from";
-  const iGive = iAmFrom ? req.give : req.receive;
-  const iGet = iAmFrom ? req.receive : req.give;
-  applyDeltaToSelf(iGive, iGet);            // jede Seite wendet ihren Teil genau einmal an
-  req.executedBy = Object.assign({}, req.executedBy, { [mine]: true });
-  if (req.executedBy.from && req.executedBy.to) req.status = "done";
-  upsertLocalReq(req);
-  save(); refreshStats();
-  api(`/api/request/${encodeURIComponent(rid)}/done`, { method: "POST", body: JSON.stringify({ side: mine }) }).catch(() => {});
-  uploadCollection().catch(() => {});
-  toast("Tausch ausgeführt – Sammlung aktualisiert 🎉");
-  go("on-group");
+      <button class="btn" data-act="counter-req" data-rid="${escapeAttr(req.id)}">Gegenangebot</button>
+      ${iAccepted
+        ? `<span class="muted small">${iAmInitiator ? "Deine Anfrage – wartet auf Zusage." : "Zugesagt – wartet auf Gegenseite."}</span>`
+        : `<button class="btn btn-primary" data-act="accept-req" data-rid="${escapeAttr(req.id)}">Annehmen &amp; tauschen</button>`}
+    </div>`}`;
 }
 
 async function leaveGroup() {
@@ -833,16 +886,14 @@ function wireTradeView() {
 
     // ---- Option 2
     if (a === "join-group") { joinGroup(); return; }
-    if (a === "refresh-group") { syncGroup().then(() => toast("Aktualisiert")).catch(() => toast("Server nicht erreichbar")); return; }
     if (a === "leave-group") { leaveGroup(); return; }
     if (a === "open-request") { openRequest(act.dataset.mid); return; }
+    if (a === "browse-member") { TRADE.requestMember = act.dataset.mid; go("on-browse"); return; }
     if (a === "send-request") { sendRequest(); return; }
     if (a === "del-req") { deleteRequest(act.dataset.rid); return; }
     if (a === "view-req") { TRADE.activeReqId = act.dataset.rid; go("on-live"); return; }
-    if (a === "live-req") { TRADE.activeReqId = act.dataset.rid; go("on-live"); return; }
-    if (a === "accept-req") { acceptRequest(act.dataset.rid).then(() => renderTradeTab()); return; }
+    if (a === "accept-req") { acceptRequest(act.dataset.rid).then(() => { if (TRADE.view === "on-live") renderTradeTab(); }); return; }
     if (a === "counter-req") { openRequest(null, getReq(act.dataset.rid)); return; }
-    if (a === "execute-req") { executeTrade(act.dataset.rid); return; }
   };
 
   // Filter-Inputs (Option 1 Build & Option 2 Request)
@@ -860,22 +911,21 @@ function wireTradeView() {
 }
 
 function rerenderLists() {
-  // Nur die beiden Tausch-Blöcke neu zeichnen, Fokus im Filter behalten
-  if (TRADE.view === "off-build" || TRADE.view === "on-request") renderTradeTab();
+  // Nach Filter-Eingabe neu zeichnen (Tausch-Builder & Karten-Ansicht)
+  if (!(TRADE.view === "off-build" || TRADE.view === "on-request" || TRADE.view === "on-browse")) return;
+  renderTradeTab();
+  const ft = document.getElementById("tFilterText");      // Fokus + Cursor ans Ende zurück
+  if (ft) { ft.focus(); const v = ft.value; ft.value = ""; ft.value = v; }
 }
 
 function updateBadges() {
   const { g, r } = tradeSummary();
-  const badges = document.querySelectorAll(".trade-badge");
-  // erste = gibst, zweite = erhältst (Reihenfolge im Markup)
-  if (badges[0]) badges[0].textContent = g;
-  if (badges[1]) badges[1].textContent = r;
+  document.querySelectorAll('[data-tcount="give"]').forEach((e) => { e.textContent = g; });
+  document.querySelectorAll('[data-tcount="receive"]').forEach((e) => { e.textContent = r; });
   const bar = document.querySelector(".trade-confirm-bar");
   if (bar) {
     const info = bar.querySelector(".muted");
-    if (info) info.innerHTML = TRADE.view === "on-request"
-      ? `gibst <b>${g}</b> · erhältst <b>${r}</b>`
-      : `Du gibst <b>${g}</b> · du erhältst <b>${r}</b>`;
+    if (info) info.innerHTML = `gibst <b>${g}</b> · erhältst <b>${r}</b>`;
     const btn = bar.querySelector(".btn-primary");
     if (btn) btn.disabled = (g + r === 0);
   }

@@ -716,3 +716,23 @@ select:focus { outline: none; border-color: var(--accent-2); }
 .tr-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .trade-status-row { display: flex; gap: 14px; justify-content: center; margin-top: 12px; font-size: 13px; color: var(--muted); }
 .trade-status-row .ok { color: var(--accent); }
+
+/* Aufklappbare Tausch-Listen (Dropdown) */
+.trade-drop { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 14px; margin-bottom: 12px; }
+.trade-drop > summary {
+  list-style: none; cursor: pointer; padding: 10px 0; font-family: "Sora", sans-serif; font-weight: 700;
+  font-size: 15px; display: flex; align-items: center; gap: 10px;
+}
+.trade-drop > summary::-webkit-details-marker { display: none; }
+.trade-drop > summary::after { content: "▾"; margin-left: auto; color: var(--muted); transition: transform .2s; }
+.trade-drop[open] > summary::after { transform: rotate(180deg); }
+.trade-drop .trade-badge { margin-left: 4px; }
+.trade-drop .trade-list { padding-bottom: 8px; }
+
+.trade-browse-btn { width: 100%; margin: 6px 0 4px; }
+
+/* Karten eines Mitglieds – nur ansehen */
+.trade-browse-list { margin-top: 10px; }
+.trade-browse-list .row { cursor: default; }
+.b-have { font-size: 11px; font-weight: 700; color: var(--accent); white-space: nowrap; }
+.b-miss { font-size: 11px; font-weight: 700; color: var(--muted-2); white-space: nowrap; }

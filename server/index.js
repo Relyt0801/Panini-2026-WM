@@ -107,7 +107,7 @@ const server = http.createServer(async (req, res) => {
       if (!g || !b.member || !b.member.id) return send(res, 404, { error: "gruppe/mitglied unbekannt" });
       g.members[b.member.id] = Object.assign({}, g.members[b.member.id], {
         id: b.member.id, name: b.member.name || (g.members[b.member.id] && g.members[b.member.id].name) || "Sammler",
-        have: b.have || {}, want: b.want || {}, lastSeen: Date.now(),
+        have: b.have || {}, want: b.want || {}, counts: b.counts || {}, lastSeen: Date.now(),
       });
       scheduleSave();
       return send(res, 200, { ok: true });
@@ -120,7 +120,7 @@ const server = http.createServer(async (req, res) => {
       const me = url.searchParams.get("member");
       if (me && g.members[me]) { g.members[me].lastSeen = Date.now(); scheduleSave(); }
       pruneMembers(g);
-      const members = Object.values(g.members).map((m) => ({ id: m.id, name: m.name, have: m.have || {}, want: m.want || {} }));
+      const members = Object.values(g.members).map((m) => ({ id: m.id, name: m.name, have: m.have || {}, want: m.want || {}, counts: m.counts || {} }));
       // nur Anfragen, die mich betreffen
       const requests = Object.values(g.requests).filter((r) => !me || r.from === me || r.to === me);
       return send(res, 200, { group: { id: g.id, name: g.name }, members, requests });
@@ -133,8 +133,9 @@ const server = http.createServer(async (req, res) => {
       if (!g || !r.id || !r.from || !r.to) return send(res, 400, { error: "ungültige anfrage" });
       const prev = g.requests[r.id] || {};
       g.requests[r.id] = Object.assign({}, prev, r, { ts: Date.now() });
-      // Gegenangebot/neue Anfrage setzt Zusagen zurück
+      // Gegenangebot/neue Anfrage setzt Zusagen & Ausführungen zurück
       g.requests[r.id].acceptedBy = r.acceptedBy || {};
+      g.requests[r.id].executedBy = r.executedBy || {};
       scheduleSave();
       return send(res, 200, { ok: true, request: g.requests[r.id] });
     }
