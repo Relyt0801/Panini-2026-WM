@@ -602,3 +602,24 @@ select:focus { outline: none; border-color: var(--accent-2); }
 .acc-body { padding: 6px 10px 12px; display: flex; flex-direction: column; gap: 6px; }
 .acc-empty { padding: 6px 4px; }
 .add-wrap { padding-top: 14px; }
+
+/* Tauschen: Skeleton-Screen */
+.trade-skeleton {
+  max-width: 460px; margin: 0 auto; padding: 40px 8px 0;
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+}
+.skel-icon {
+  width: 76px; height: 76px; border-radius: 22px; display: grid; place-items: center;
+  font-size: 38px; margin-bottom: 16px;
+  background: linear-gradient(140deg, rgba(52,224,161,.18), rgba(124,107,255,.18));
+  border: 1px solid var(--line-strong);
+}
+.skel-title { font-family: "Sora", sans-serif; font-size: 22px; margin: 0 0 18px; }
+.skel-import { width: 100%; max-width: 320px; height: 54px; font-size: 15px; }
+.skel-clear { margin-top: 12px; }
+.skel-steps {
+  text-align: left; margin: 26px 0 0; padding-left: 22px;
+  color: var(--muted-2); font-size: 14px; line-height: 1.7;
+}
+.skel-steps li { margin-bottom: 10px; }
+.skel-status { margin-top: 20px; color: var(--accent); }

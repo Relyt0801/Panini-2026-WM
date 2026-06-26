@@ -70,7 +70,9 @@
       <div class="result-bar">
         <span id="resultInfo" class="result-info"></span>
         <div class="result-actions">
-          <button class="link-btn" id="btnCopyList">📋 Liste kopieren</button>
+          <button class="link-btn" id="btnExport">↓ Daten exportieren</button>
+          <span class="dot">·</span>
+          <button class="link-btn" id="btnImport">↑ Daten importieren</button>
         </div>
       </div>
 
@@ -86,11 +88,9 @@
         </ul>
         <p class="muted small">
           980 Basis-Sticker (FWC 00–19 + 48 Teams à 1–20) plus 20 Extra-Sticker in 4 Varianten.
-          Daten liegen lokal im Browser – ab und zu exportieren.
+          Daten liegen lokal im Browser – per <b>Daten exportieren</b> sichern.
         </p>
         <div class="datacard-actions">
-          <button class="btn" id="btnExport">↓ Export</button>
-          <button class="btn" id="btnImport">↑ Import</button>
           <button class="btn btn-danger" id="btnReset">Zurücksetzen</button>
         </div>
       </details>
@@ -135,60 +135,16 @@
   <!-- ======================= TAUSCHEN ======================= -->
   <div id="pane-trade" class="tab-pane" hidden>
     <div class="wrap trade-wrap">
-      <!-- Partner Setup -->
-      <div class="trade-setup-box">
-        <div class="trade-setup-row">
-          <input id="tradePartnerName" type="text" placeholder="Name des Partners" />
-          <button class="btn" id="tradeImportBtn">📂 Sammlung laden</button>
-          <button class="btn btn-danger" id="tradeClearBtn" hidden>Entfernen</button>
-        </div>
-        <p class="muted small" id="tradePartnerStatus">Noch kein Partner. JSON-Export der anderen Person importieren.</p>
-      </div>
-
-      <!-- Trade Content (hidden when no partner) -->
-      <div id="tradeContent" hidden>
-        <!-- Ich gebe ab -->
-        <div class="trade-block">
-          <div class="trade-block-head">
-            <h4>🤝 Ich gebe ab</h4>
-            <span class="trade-badge" id="tradeGiveCount">0</span>
-            <button class="btn" id="tradeGiveAllBtn">Alle zuteilen</button>
-          </div>
-          <p class="muted small">Deine Doppelten, die <span class="partner-name-ref">Partner</span> noch braucht.</p>
-          <div id="tradeGiveList" class="trade-list"></div>
-        </div>
-
-        <!-- Ich bekomme -->
-        <div class="trade-block">
-          <div class="trade-block-head">
-            <h4>📥 Ich bekomme</h4>
-            <span class="trade-badge" id="tradeGetCount">0</span>
-            <button class="btn" id="tradeGetAllBtn">Alle anfordern</button>
-          </div>
-          <p class="muted small"><span class="partner-name-ref">Partner</span>s Doppelte, die du noch brauchst.</p>
-          <div id="tradeGetList" class="trade-list"></div>
-        </div>
-
-        <!-- Sonstige abgeben -->
-        <div class="trade-block">
-          <div class="trade-block-head">
-            <h4>📋 Sonstige Doppelte anbieten</h4>
-            <span class="trade-badge" id="tradeOfferCount">0</span>
-          </div>
-          <p class="muted small">Deine weiteren Doppelten (Partner hat sie schon).</p>
-          <div id="tradeOfferList" class="trade-list"></div>
-        </div>
-
-        <!-- Angefordert -->
-        <div class="trade-block" id="tradeWantedBlock" hidden>
-          <div class="trade-block-head">
-            <h4>⭐ Angefordert</h4>
-            <span class="trade-badge" id="tradeWantedCount">0</span>
-            <button class="btn btn-primary" id="tradeConfirmBtn">✓ Als erhalten markieren</button>
-          </div>
-          <p class="muted small">Karten, die du vom Partner angefordert hast.</p>
-          <div id="tradeWantedList" class="trade-list"></div>
-        </div>
+      <div class="trade-skeleton">
+        <div class="skel-icon">⇄</div>
+        <h2 class="skel-title">Tauschen</h2>
+        <button class="btn btn-primary skel-import" id="tradeImportBtn">📥 Daten importieren</button>
+        <button class="btn btn-danger skel-clear" id="tradeClearBtn" hidden>Partner entfernen</button>
+        <ol class="skel-steps">
+          <li>Importiere den Sammelfortschritt eines Freundes.</li>
+          <li>Wähle Karten zum Tauschen aus – sie erscheinen in einer Dropdown-Liste (nach Team bzw. Nummer sortiert).</li>
+        </ol>
+        <p class="muted small skel-status" id="tradePartnerStatus"></p>
       </div>
     </div>
     <div class="tab-spacer"></div>

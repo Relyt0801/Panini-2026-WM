@@ -439,27 +439,6 @@ function openEdit(c) {
 }
 
 /* ======================================================================
- * Liste kopieren (Übersicht-Auswahl)
- * ====================================================================== */
-function copyList() {
-  const visible = sortGlobal(CARDS.filter(passesOverview));
-  if (!visible.length) { toast("Liste ist leer"); return; }
-  const lines = visible.map((c) => {
-    const n = countOf(c.id);
-    const extra = n > 1 ? ` (${n}×)` : "";
-    return `${c.label}${nameOf(c) ? " – " + nameOf(c) : ""}${extra}`;
-  });
-  const scope = ui.nation === "ALL" ? "Alle" : sectionByCode[ui.nation].name;
-  const text = `Panini WM 2026 · ${scope} (${lines.length}):\n` + lines.join("\n");
-  navigator.clipboard?.writeText(text).then(() => toast(`${lines.length} Karten kopiert`), () => fallbackCopy(text));
-}
-function fallbackCopy(text) {
-  const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta);
-  ta.select(); try { document.execCommand("copy"); toast("Liste kopiert"); } catch (e) { toast("Kopieren nicht möglich"); }
-  ta.remove();
-}
-
-/* ======================================================================
  * Import / Export / Reset
  * ====================================================================== */
 function exportData() {
@@ -524,10 +503,9 @@ function switchTab(tab) {
 }
 
 /* ======================================================================
- * Tauschen-Tab
+ * Tauschen-Tab (vorerst: Skeleton + Partner-Import)
+ * Die Auswahl-/Sync-Logik folgt, sobald der Mechanismus festgelegt ist.
  * ====================================================================== */
-function partnerCountOf(id) { return STATE.partner ? (STATE.partner.counts[id] || 0) : 0; }
-
 function initTradeTab() {
   el("tradeImportBtn").onclick = () => {
     const inp = document.createElement("input"); inp.type = "file"; inp.accept = "application/json";
@@ -536,7 +514,7 @@ function initTradeTab() {
       const r = new FileReader();
       r.onload = () => { try {
         const parsed = JSON.parse(r.result);
-        const name = el("tradePartnerName").value.trim() || f.name.replace(/\.json$/i, "");
+        const name = f.name.replace(/\.json$/i, "");
         STATE.partner = { name, counts: parsed.counts || {} };
         STATE.tradeWanted = {};
         save(); renderTradeTab(); toast("Partnersammlung geladen");
@@ -549,74 +527,13 @@ function initTradeTab() {
     STATE.partner = null; STATE.tradeWanted = {};
     save(); renderTradeTab(); toast("Partner entfernt");
   };
-  el("tradeGiveAllBtn").onclick = () => {
-    const giveCards = CARDS.filter((c) => countOf(c.id) >= 2 && partnerCountOf(c.id) === 0);
-    for (const c of giveCards) setCount(c.id, countOf(c.id) - 1);
-    save(); renderTradeTab(); refreshStats(); toast(`${giveCards.length} Karten zugeteilt`);
-  };
-  el("tradeGetAllBtn").onclick = () => {
-    const getCards = CARDS.filter((c) => partnerCountOf(c.id) >= 2 && countOf(c.id) === 0);
-    for (const c of getCards) STATE.tradeWanted[c.id] = true;
-    save(); renderTradeTab(); toast(`${getCards.length} Karten angefordert`);
-  };
-  el("tradeConfirmBtn").onclick = () => {
-    let count = 0;
-    for (const id in STATE.tradeWanted) if (countOf(id) === 0) { setCount(id, 1); count++; }
-    STATE.tradeWanted = {};
-    save(); refreshStats(); renderTradeTab(); toast(`${count} Karten als erhalten markiert`);
-  };
-  el("tradeContent").addEventListener("click", (e) => {
-    const btn = e.target.closest("[data-act][data-id]"); if (!btn) return;
-    const act = btn.dataset.act, id = btn.dataset.id;
-    if (act === "give") { setCount(id, countOf(id) - 1); save(); renderTradeTab(); refreshStats(); }
-    else if (act === "want") { STATE.tradeWanted[id] = true; save(); renderTradeTab(); }
-    else if (act === "unwant") { delete STATE.tradeWanted[id]; save(); renderTradeTab(); }
-  });
 }
 function renderTradeTab() {
   const hasPartner = !!STATE.partner;
-  el("tradeContent").hidden = !hasPartner;
   el("tradeClearBtn").hidden = !hasPartner;
-  if (!hasPartner) {
-    el("tradePartnerStatus").textContent = "Noch kein Partner. JSON-Export der anderen Person importieren.";
-    return;
-  }
-  el("tradePartnerName").value = STATE.partner.name;
-  el("tradePartnerStatus").textContent = `Partner: ${STATE.partner.name}`;
-  document.querySelectorAll(".partner-name-ref").forEach((s) => s.textContent = STATE.partner.name);
-
-  const giveCards = CARDS.filter((c) => countOf(c.id) >= 2 && partnerCountOf(c.id) === 0);
-  const getCards = CARDS.filter((c) => partnerCountOf(c.id) >= 2 && countOf(c.id) === 0);
-  const offerCards = CARDS.filter((c) => countOf(c.id) >= 2 && partnerCountOf(c.id) > 0);
-  const wantedIds = Object.keys(STATE.tradeWanted);
-
-  el("tradeGiveCount").textContent = giveCards.length;
-  el("tradeGetCount").textContent = getCards.length;
-  el("tradeOfferCount").textContent = offerCards.length;
-  el("tradeWantedCount").textContent = wantedIds.length;
-  el("tradeWantedBlock").hidden = wantedIds.length === 0;
-
-  el("tradeGiveList").innerHTML = renderTradeRows(giveCards, "give");
-  el("tradeGetList").innerHTML = renderTradeRows(getCards, "want");
-  el("tradeOfferList").innerHTML = renderTradeRows(offerCards, null);
-  el("tradeWantedList").innerHTML = renderTradeRows(wantedIds.map((id) => cardById[id]).filter(Boolean), "unwant");
-}
-function renderTradeRows(cards, action) {
-  if (!cards.length) return `<p class="muted small" style="padding:8px 0">Keine Karten</p>`;
-  return cards.map((c) => {
-    const n = countOf(c.id);
-    const ctLabel = n >= 2 ? `${n}×` : (n === 1 ? "1×" : "0×");
-    let btnHtml = "";
-    if (action === "give") btnHtml = `<button class="btn trade-btn" data-act="give" data-id="${c.id}">−1 zuteilen</button>`;
-    else if (action === "want") btnHtml = `<button class="btn trade-btn" data-act="want" data-id="${c.id}">Anfordern</button>`;
-    else if (action === "unwant") btnHtml = `<button class="btn trade-btn btn-danger" data-act="unwant" data-id="${c.id}">Entfernen</button>`;
-    return `<div class="trade-row" data-id="${c.id}">
-      <span class="trade-num">${escapeHtml(c.label)}</span>
-      <span class="trade-name">${escapeHtml(nameOf(c))}</span>
-      ${n >= 2 ? `<span class="trade-ct">${ctLabel}</span>` : ""}
-      ${btnHtml}
-    </div>`;
-  }).join("");
+  el("tradePartnerStatus").textContent = hasPartner
+    ? `✓ Partner „${STATE.partner.name}“ geladen (${Object.keys(STATE.partner.counts).length} Karten). Auswahl-Funktion folgt.`
+    : "";
 }
 
 /* ======================================================================
@@ -665,7 +582,6 @@ function init() {
   el("searchClear").onclick = () => { el("searchInput").value = ""; ui.search = ""; el("searchClear").hidden = true; renderOverview(); el("searchInput").focus(); };
   el("nationSelect").onchange = (e) => { ui.nation = e.target.value; renderOverview(); };
   el("overviewList").addEventListener("click", onRowAreaClick);
-  el("btnCopyList").onclick = copyList;
   el("btnExport").onclick = exportData;
   el("btnImport").onclick = importData;
   el("btnReset").onclick = resetAll;
