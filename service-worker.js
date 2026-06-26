@@ -1,5 +1,5 @@
 /* Panini WM 2026 Tracker – Service Worker (App-Shell offline-fähig) */
-const CACHE = "panini-wm2026-v3";
+const CACHE = "panini-wm2026-v4";
 const ASSETS = [
   "./",
   "./index.html",
@@ -27,14 +27,15 @@ self.addEventListener("fetch", (e) => {
   if (req.method !== "GET") return;
   const url = new URL(req.url);
 
-  // App-eigene Dateien: cache-first (offline). Externes (Fonts): network-first mit Cache-Fallback.
+  // App-eigene Dateien: network-first (immer frische Version), Cache nur als Offline-Fallback.
+  // Externes (Fonts): ebenfalls network-first mit Cache-Fallback.
   if (url.origin === self.location.origin) {
     e.respondWith(
-      caches.match(req).then((hit) => hit || fetch(req).then((res) => {
+      fetch(req).then((res) => {
         const copy = res.clone();
         caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
         return res;
-      }).catch(() => caches.match("./index.html")))
+      }).catch(() => caches.match(req).then((hit) => hit || caches.match("./index.html")))
     );
   } else {
     e.respondWith(

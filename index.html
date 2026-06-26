@@ -24,14 +24,14 @@
     <div class="hero-inner">
       <div class="hero-brand">
         <div class="logo"><span class="logo-ball">⚽</span></div>
-        <div>
+        <div class="hero-text">
           <div class="kicker">FIFA World Cup · USA · Kanada · Mexiko</div>
-          <h1>Panini WM 2026 — Sticker-Tracker</h1>
-          <p class="hero-sub">Schnell abhaken · doppelte & fehlende im Blick · installierbar.</p>
+          <h1>Panini WM 2026</h1>
+          <p class="hero-sub">Sticker-Tracker · schnell abhaken, tauschen, sammeln.</p>
         </div>
       </div>
       <div class="hero-right">
-        <button class="install-btn" id="installBtn" hidden>⤓ App installieren</button>
+        <button class="install-btn" id="installBtn" hidden>⤓ Installieren</button>
         <div class="ring-wrap" title="Gesamtfortschritt (980 Basis-Sticker)">
           <svg class="ring" viewBox="0 0 120 120" aria-hidden="true">
             <defs><linearGradient id="ringGrad" x1="0" y1="0" x2="1" y2="1">
@@ -59,21 +59,15 @@
       <div class="controls">
         <div class="search">
           <span class="icon">🔎</span>
-          <input id="searchInput" type="search" placeholder="Suche „GER 12“, „Nmecha“, „Messi Gold“ …  (Taste /)" autocomplete="off" />
+          <input id="searchInput" type="search" placeholder="Suche „GER 12“, „Nmecha“, „Messi Gold“ …" autocomplete="off" />
           <button id="searchClear" class="search-clear" title="Leeren" hidden>✕</button>
         </div>
-        <select id="teamSelect" aria-label="Sektion filtern"></select>
+        <select id="teamSelect" aria-label="Nation / Sektion filtern"></select>
         <select id="sortSelect" aria-label="Sortierung">
           <option value="num">Nach Nummer</option>
           <option value="name">Nach Name (A–Z)</option>
           <option value="missing">Fehlende zuerst</option>
         </select>
-      </div>
-      <div class="seg" id="viewSeg" role="tablist">
-        <button class="seg-btn active" data-view="all">Alle</button>
-        <button class="seg-btn" data-view="owned">✓ Habe ich</button>
-        <button class="seg-btn" data-view="missing">Fehlen mir</button>
-        <button class="seg-btn" data-view="dupes">⇄ Doppelte</button>
       </div>
       <div class="chips" id="confChips"></div>
     </div>
@@ -94,29 +88,50 @@
 
     <div id="sections"></div>
 
-    <section class="datacard">
-      <h3>ℹ️ So funktioniert's</h3>
-      <ul class="howto">
-        <li><b>Karte antippen</b> = „habe ich“. Mit <b>−/+</b> die Anzahl ändern (Doppelte).</li>
-        <li><b>Alle ✓</b> im Team-Kopf hakt ein ganzes Team auf einmal ab (nochmal = leeren).</li>
-        <li><b>✨</b> auf DFB-Karten markiert die <b>Glanz-Variante</b> (nur Deutschland).</li>
-        <li><b>Doppelte / Fehlen mir</b> oben umschalten und mit <b>📋 Liste kopieren</b> als Tauschliste teilen.</li>
-        <li>Suche nach Nummer (<code>GER 12</code>), Name (<code>Nmecha</code>) oder Extra (<code>Messi Gold</code>).</li>
-      </ul>
-      <p class="muted">
-        980 Basis-Sticker (FWC 00–19 + 48 Teams à 1–20) plus 20 Extra-Sticker in
-        4 Varianten. Spielernamen sind editierbare Vorschau (✎), bis Panini die
-        offizielle Liste bestätigt. Daten liegen lokal im Browser – ab und zu exportieren.
-      </p>
-      <div class="datacard-actions">
+    <footer class="foot">Inoffizielles Hilfstool für Sammler · keine Verbindung zu Panini oder der FIFA.</footer>
+  </main>
+
+  <!-- ======================= BOTTOM NAVBAR ======================= -->
+  <nav class="tabbar" id="tabbar" role="tablist" aria-label="Ansicht wechseln">
+    <button class="tab active" data-view="all"><span class="ti">🗂️</span><span class="tl">Alle</span></button>
+    <button class="tab" data-view="owned"><span class="ti">✓</span><span class="tl">Habe ich</span></button>
+    <button class="tab" data-view="missing"><span class="ti">◻</span><span class="tl">Fehlt</span></button>
+    <button class="tab" data-view="dupes"><span class="ti">⇄</span><span class="tl">Doppelte</span></button>
+    <button class="tab" data-act="more"><span class="ti">⋯</span><span class="tl">Mehr</span></button>
+  </nav>
+
+  <!-- ======================= MEHR-SHEET ======================= -->
+  <div class="sheet-backdrop" id="sheet" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" aria-label="Mehr">
+      <div class="sheet-handle"></div>
+      <h3 class="sheet-title">Mehr</h3>
+
+      <div class="sheet-actions">
         <button class="btn" id="btnExport">↓ Export</button>
         <button class="btn" id="btnImport">↑ Import</button>
         <button class="btn btn-danger" id="btnReset">Zurücksetzen</button>
       </div>
-    </section>
 
-    <footer class="foot">Inoffizielles Hilfstool für Sammler · keine Verbindung zu Panini oder der FIFA.</footer>
-  </main>
+      <details class="sheet-help" open>
+        <summary>ℹ️ So funktioniert's</summary>
+        <ul class="howto">
+          <li><b>Karte antippen</b> = „habe ich“. Mit <b>−/+</b> die Anzahl ändern (Doppelte).</li>
+          <li><b>Alle ✓</b> im Team-Kopf hakt ein ganzes Team auf einmal ab (nochmal = leeren).</li>
+          <li><b>✨</b> auf DFB-Karten markiert die <b>Glanz-Variante</b> (nur Deutschland).</li>
+          <li>Unten umschalten zwischen <b>Alle / Habe ich / Fehlt / Doppelte</b>; mit <b>📋 Liste kopieren</b> als Tauschliste teilen.</li>
+          <li>Suche nach Nummer (<code>GER 12</code>), Name (<code>Nmecha</code>) oder Extra (<code>Messi Gold</code>).</li>
+        </ul>
+      </details>
+
+      <p class="muted sheet-note">
+        980 Basis-Sticker (FWC 00–19 + 48 Teams à 1–20) plus 20 Extra-Sticker in
+        4 Varianten. Spielernamen sind editierbare Vorschau (✎), bis Panini die
+        offizielle Liste bestätigt. Daten liegen lokal im Browser – ab und zu exportieren.
+      </p>
+
+      <button class="btn sheet-close" id="sheetClose">Schließen</button>
+    </div>
+  </div>
 
   <!-- ======================= MODAL ======================= -->
   <div class="modal-backdrop" id="modal" hidden>
