@@ -793,7 +793,18 @@ function renderTradeRows(cards, action) {
  * ====================================================================== */
 function registerSW() {
   if ("serviceWorker" in navigator) {
-    window.addEventListener("load", () => navigator.serviceWorker.register("service-worker.js").catch(() => {}));
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("service-worker.js").then((reg) => {
+        reg.addEventListener("updatefound", () => {
+          const sw = reg.installing;
+          sw.addEventListener("statechange", () => {
+            if (sw.state === "activated") window.location.reload();
+          });
+        });
+      }).catch(() => {});
+    });
+    // Reload when a new SW takes over (handles already-waiting SW case)
+    navigator.serviceWorker.addEventListener("controllerchange", () => window.location.reload());
   }
   let deferred = null;
   window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); deferred = e; el("installBtn").hidden = false; });
