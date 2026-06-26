@@ -259,9 +259,12 @@ function buildRowsHtml(ids, dir, theirCounts) {
     const qty = map[id] || 0;
     const max = dir === "give" ? maxGive(id) : maxReceive(id, theirCounts);
     const name = (STATE.names[id] != null ? STATE.names[id] : c.name) || c.role || "—";
-    return `<div class="trade-row" data-id="${id}">
+    // beim Erhalten markieren, was für mich neu ist (habe ich noch gar nicht)
+    const neu = dir === "receive" && tradeCountOf(id) === 0 ? `<span class="s-tag neu">✨ neu</span>` : "";
+    return `<div class="trade-row${qty >= 1 ? " picked" : ""}" data-id="${id}">
       <span class="r-num">${escapeHtml(c.label)}</span>
       <span class="trade-name">${escapeHtml(name)}</span>
+      ${neu}
       <span class="trade-avail">×${max}</span>
       <span class="r-cnt ${qty >= 1 ? "multi" : ""}">
         <button class="r-step" data-act="t-minus" data-dir="${dir}" aria-label="weniger">−</button>
@@ -270,6 +273,14 @@ function buildRowsHtml(ids, dir, theirCounts) {
       </span>
     </div>`;
   }).join("");
+}
+
+// kleine Werkzeugleiste über einer Auswahlliste (Alle / Keine)
+function listTools(dir) {
+  return `<div class="trade-list-tools">
+    <button class="chiplet" data-act="sel-all" data-dir="${dir}">Alle auswählen</button>
+    <button class="chiplet" data-act="sel-none" data-dir="${dir}">Keine</button>
+  </div>`;
 }
 
 function applyTradeFilter(ids) {
@@ -301,15 +312,17 @@ function viewOffBuild() {
     </div>
 
     <div class="trade-block">
-      <div class="trade-block-head"><h4>Du gibst</h4><span class="trade-badge" data-tcount="give">${g}</span></div>
-      <p class="muted small">Deine Doppelten, die „${escapeHtml(TRADE.partner.name)}“ fehlen.</p>
-      <div class="trade-list">${buildRowsHtml(giveIds, "give", theirs)}</div>
+      <div class="trade-block-head"><h4>Du erhältst</h4><span class="trade-badge" data-tcount="receive">${r}</span></div>
+      <p class="muted small">Doppelte von „${escapeHtml(TRADE.partner.name)}“, die dir fehlen – alles <b>neu</b> für dich.</p>
+      ${listTools("receive")}
+      <div class="trade-list">${buildRowsHtml(recvIds, "receive", theirs)}</div>
     </div>
 
     <div class="trade-block">
-      <div class="trade-block-head"><h4>Du erhältst</h4><span class="trade-badge" data-tcount="receive">${r}</span></div>
-      <p class="muted small">Doppelte von „${escapeHtml(TRADE.partner.name)}“, die dir fehlen.</p>
-      <div class="trade-list">${buildRowsHtml(recvIds, "receive", theirs)}</div>
+      <div class="trade-block-head"><h4>Du gibst</h4><span class="trade-badge" data-tcount="give">${g}</span></div>
+      <p class="muted small">Deine Doppelten, die „${escapeHtml(TRADE.partner.name)}“ fehlen.</p>
+      ${listTools("give")}
+      <div class="trade-list">${buildRowsHtml(giveIds, "give", theirs)}</div>
     </div>
 
     <div class="trade-confirm-bar">
@@ -599,14 +612,15 @@ function reqList(reqs, dir) {
     const give = Object.values(r.give || {}).reduce((a, b) => a + b, 0);
     const recv = Object.values(r.receive || {}).reduce((a, b) => a + b, 0);
     const status = statusLabel(r, dir);
-    return `<div class="trade-req" data-rid="${escapeAttr(r.id)}">
+    const turn = myTurn(r, dir);
+    return `<div class="trade-req${turn ? " turn" : ""}" data-rid="${escapeAttr(r.id)}">
       <div class="tr-top">
         <span class="tr-who">${escapeHtml(memberName(other))}</span>
-        <span class="tr-status ${r.status}">${status}</span>
+        <span class="tr-status${turn ? " turn" : ""}">${status}</span>
       </div>
       <div class="tr-sum">Du gibst <b>${dir === "in" ? recv : give}</b> · du erhältst <b>${dir === "in" ? give : recv}</b></div>
       <div class="tr-actions">
-        <button class="btn btn-primary trade-btn" data-act="view-req" data-rid="${escapeAttr(r.id)}">Öffnen</button>
+        <button class="btn btn-primary trade-btn" data-act="view-req" data-rid="${escapeAttr(r.id)}">${turn ? "Öffnen ›" : "Öffnen"}</button>
         <button class="btn btn-danger trade-btn" data-act="del-req" data-rid="${escapeAttr(r.id)}">Löschen</button>
       </div>
     </div>`;
@@ -619,11 +633,18 @@ function myExecuted(r) {
 }
 function statusLabel(r, dir) {
   if (r.status === "done" || myExecuted(r)) return "getauscht ✓";
-  if (bothAccepted(r)) return "wird abgeschlossen …";
-  if (r.status === "accepted") return dir === "in" ? "du dran: akzeptieren" : "wartet auf Gegenseite";
-  if (r.status === "countered") return dir === "in" ? "Gegenangebot erhalten" : "Gegenangebot gesendet";
-  if (r.status === "open") return dir === "in" ? "neu – bitte ansehen" : "gesendet";
-  return r.status;
+  const accTo = !!(r.acceptedBy && r.acceptedBy.to);
+  const accFrom = !!(r.acceptedBy && r.acceptedBy.from);
+  if (accTo && accFrom) return "wird abgeschlossen …";
+  // dir "out" = ich bin Ersteller (from), "in" = ich bin Empfänger (to)
+  if (dir === "out") return accTo ? "du dran: bestätigen" : "wartet auf Zusage";
+  return accTo ? "wartet auf Bestätigung" : "neu – bitte annehmen";
+}
+// ist gerade ich am Zug?
+function myTurn(r, dir) {
+  if (r.status === "done" || bothAccepted(r)) return false;
+  const accTo = !!(r.acceptedBy && r.acceptedBy.to);
+  return dir === "out" ? accTo : !accTo;
 }
 function bothAccepted(r) { return !!(r.acceptedBy && r.acceptedBy.from && r.acceptedBy.to); }
 
@@ -664,12 +685,14 @@ function viewOnRequest() {
     </div>
     <details class="trade-drop" open>
       <summary>Du erhältst <span class="trade-badge" data-tcount="receive">${r}</span></summary>
-      <p class="muted small">${escapeHtml(name)} hat doppelt, dir fehlt.</p>
+      <p class="muted small">${escapeHtml(name)} hat doppelt, dir fehlt – alles davon ist <b>neu</b> für dich.</p>
+      ${listTools("receive")}
       <div class="trade-list">${buildRowsHtml(recvIds, "receive", theirs)}</div>
     </details>
     <details class="trade-drop" open>
       <summary>Du gibst <span class="trade-badge" data-tcount="give">${g}</span></summary>
       <p class="muted small">Du hast doppelt, ${escapeHtml(name)} fehlt.</p>
+      ${listTools("give")}
       <div class="trade-list">${buildRowsHtml(giveIds, "give", {})}</div>
     </details>
     <div class="trade-confirm-bar">
@@ -720,15 +743,15 @@ async function sendRequest() {
     from: STATE.trade.identity.id, to: target,
     give, receive,                       // immer aus Sicht von "from"
     status: TRADE.activeReqId ? "countered" : "open",
-    acceptedBy: { from: true },          // Senden = eigene Zusage; nur die Gegenseite muss noch ok geben
-    executedBy: {},                      // (Gegenangebot setzt beides zurück)
+    acceptedBy: {},                      // niemand hat final bestätigt (Senden ≠ Zusage)
+    executedBy: {},
     ts: Date.now(),
   };
   // Lokal speichern (überlebt Inaktivität), dann an Server
   upsertLocalReq(req);
   try { await api("/api/request", { method: "POST", body: JSON.stringify(req) }); }
   catch (e) { toast("Lokal gespeichert – Server nicht erreichbar"); }
-  toast("Anfrage gesendet – wartet auf Zusage");
+  toast("Angebot gesendet");
   go("on-group");
 }
 
@@ -757,7 +780,7 @@ async function acceptRequest(rid) {
   upsertLocalReq(req);
   try { await api(`/api/request/${encodeURIComponent(rid)}/accept`, { method: "POST", body: JSON.stringify({ side }) }); } catch (e) {}
   if (bothAccepted(req)) autoExecutePending();   // beide ok -> sofort abschließen
-  else toast("Zugesagt – warte auf Gegenseite");
+  else toast("Angenommen – wartet auf finale Bestätigung");
 }
 
 // Beidseitig akzeptierte Tausche automatisch ausführen (jede Seite ihren Teil, genau einmal)
@@ -794,35 +817,55 @@ function viewOnLive() {
   const other = memberName(iAmFrom ? req.to : req.from);
   const giveIds = tradeSort(Object.keys(iGive));
   const getIds = tradeSort(Object.keys(iGet));
-  const li = (ids, map) => ids.length
-    ? ids.map((id) => `<li>${escapeHtml(cardById[id].label)} · ${escapeHtml((STATE.names[id] ?? cardById[id].name) || "")} <b>×${map[id]}</b></li>`).join("")
+  const li = (ids, map, markNew) => ids.length
+    ? ids.map((id) => `<li>${escapeHtml(cardById[id].label)} · ${escapeHtml((STATE.names[id] ?? cardById[id].name) || "")} <b>×${map[id]}</b>${
+        markNew && tradeCountOf(id) === 0 ? ` <span class="s-tag neu">✨ neu</span>` : ""}</li>`).join("")
     : `<li class="muted">—</li>`;
   const mine = iAmFrom ? "from" : "to";
-  const otherSide = iAmFrom ? "to" : "from";
-  const iAccepted = !!(req.acceptedBy && req.acceptedBy[mine]);
   const done = req.status === "done" || (req.executedBy && req.executedBy[mine]);
-  const iAmInitiator = iAmFrom && req.status !== "countered";
+  const recipientAccepted = !!(req.acceptedBy && req.acceptedBy.to);
+  const makerConfirmed = !!(req.acceptedBy && req.acceptedBy.from);
+  const maker = memberName(req.from);
+  const recipient = memberName(req.to);
+
+  // Aktionsbereich je nach Rolle. Der Angebots-Ersteller (from) bestätigt zuletzt.
+  let actions;
+  if (done) {
+    actions = `<div class="trade-done-head">✓ Tausch abgeschlossen</div>`;
+  } else if (!iAmFrom) {
+    // Ich bin die Gegenseite (Empfänger)
+    actions = `<div class="trade-confirm-bar">
+      <button class="btn" data-act="counter-req" data-rid="${escapeAttr(req.id)}">Gegenangebot</button>
+      ${recipientAccepted
+        ? `<span class="muted small">✓ Angenommen – wartet auf finale Bestätigung von ${escapeHtml(maker)}.</span>`
+        : `<button class="btn btn-primary" data-act="accept-req" data-rid="${escapeAttr(req.id)}">Annehmen</button>`}
+    </div>`;
+  } else {
+    // Ich bin der Ersteller des Angebots – ich bestätige zuletzt
+    actions = `<div class="trade-confirm-bar">
+      <button class="btn" data-act="counter-req" data-rid="${escapeAttr(req.id)}">Ändern</button>
+      ${recipientAccepted
+        ? `<button class="btn btn-primary" data-act="accept-req" data-rid="${escapeAttr(req.id)}" ${makerConfirmed ? "disabled" : ""}>Endgültig bestätigen &amp; tauschen</button>`
+        : `<span class="muted small">Warte auf Zusage von ${escapeHtml(recipient)} …</span>`}
+    </div>`;
+  }
   return `
     ${backBar("on-group")}
     <h3 class="trade-h">Tausch mit „${escapeHtml(other)}“</h3>
     <p class="muted small">${done
       ? "Abgeschlossen – beide Sammlungen wurden aktualisiert."
-      : "Sobald <b>beide</b> zugesagt haben, wird der Tausch automatisch ausgeführt."}</p>
-    <div class="trade-block">
-      <div class="trade-block-head"><h4>Du gibst „${escapeHtml(other)}“</h4><span class="trade-badge">${giveIds.length}</span></div>
-      <ul class="trade-mini-list">${li(giveIds, iGive)}</ul>
-    </div>
+      : iAmFrom
+        ? "Dein Angebot. Du bestätigst zuletzt – erst dann wird getauscht."
+        : `Angebot von ${escapeHtml(maker)}. Nimm an; ${escapeHtml(maker)} bestätigt dann endgültig.`}</p>
     <div class="trade-block">
       <div class="trade-block-head"><h4>Du erhältst</h4><span class="trade-badge">${getIds.length}</span></div>
-      <ul class="trade-mini-list">${li(getIds, iGet)}</ul>
+      <ul class="trade-mini-list">${li(getIds, iGet, true)}</ul>
     </div>
-    ${done ? `<div class="trade-done-head">✓ Tausch abgeschlossen</div>` : `
-    <div class="trade-confirm-bar">
-      <button class="btn" data-act="counter-req" data-rid="${escapeAttr(req.id)}">Gegenangebot</button>
-      ${iAccepted
-        ? `<span class="muted small">${iAmInitiator ? "Deine Anfrage – wartet auf Zusage." : "Zugesagt – wartet auf Gegenseite."}</span>`
-        : `<button class="btn btn-primary" data-act="accept-req" data-rid="${escapeAttr(req.id)}">Annehmen &amp; tauschen</button>`}
-    </div>`}`;
+    <div class="trade-block">
+      <div class="trade-block-head"><h4>Du gibst „${escapeHtml(other)}“</h4><span class="trade-badge">${giveIds.length}</span></div>
+      <ul class="trade-mini-list">${li(giveIds, iGive, false)}</ul>
+    </div>
+    ${actions}`;
 }
 
 async function leaveGroup() {
@@ -875,7 +918,22 @@ function wireTradeView() {
       // nur die Zeile + Badges aktualisieren
       const val = row.querySelector(".r-val"); if (val) val.textContent = map[id] || 0;
       const cnt = row.querySelector(".r-cnt"); if (cnt) cnt.classList.toggle("multi", (map[id] || 0) >= 1);
+      row.classList.toggle("picked", (map[id] || 0) >= 1);
       updateBadges();
+      return;
+    }
+
+    if (a === "sel-all" || a === "sel-none") {
+      const dir = act.dataset.dir;
+      const map = dir === "give" ? TRADE.give : TRADE.receive;
+      const container = act.closest(".trade-drop") || act.closest(".trade-block");
+      if (container) container.querySelectorAll(".trade-row").forEach((row) => {
+        const id = row.dataset.id;
+        if (a === "sel-none") { delete map[id]; }
+        else { const plus = row.querySelector('[data-act="t-plus"]'); const max = parseInt(plus && plus.dataset.max, 10) || 0; if (max > 0) map[id] = max; }
+      });
+      renderTradeTab();
+      const ft = document.getElementById("tFilterText"); if (ft) ft.focus();
       return;
     }
 

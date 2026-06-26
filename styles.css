@@ -736,3 +736,22 @@ select:focus { outline: none; border-color: var(--accent-2); }
 .trade-browse-list .row { cursor: default; }
 .b-have { font-size: 11px; font-weight: 700; color: var(--accent); white-space: nowrap; }
 .b-miss { font-size: 11px; font-weight: 700; color: var(--muted-2); white-space: nowrap; }
+
+/* „neu für mich"-Markierung */
+.s-tag.neu { background: linear-gradient(120deg, rgba(52,224,161,.22), rgba(63,182,255,.22)); color: var(--accent); border: 1px solid rgba(52,224,161,.4); }
+.trade-mini-list .s-tag.neu { display: inline-block; font-size: 10px; padding: 0 6px; border-radius: 99px; margin-left: 4px; vertical-align: middle; }
+
+/* Alle/Keine-Werkzeugleiste */
+.trade-list-tools { display: flex; gap: 8px; margin: 2px 0 8px; }
+.chiplet {
+  border: 1px solid var(--line); background: var(--card); color: var(--muted);
+  padding: 5px 12px; border-radius: 99px; font-size: 12px; font-weight: 600; cursor: pointer; transition: .15s;
+}
+.chiplet:hover { color: var(--text); border-color: var(--line-strong); }
+
+/* ausgewählte Tausch-Zeile hervorheben */
+.trade-row.picked { background: rgba(52,224,161,.06); border-radius: 8px; }
+
+/* „du bist am Zug" hervorheben */
+.trade-req.turn { background: rgba(63,182,255,.06); border-radius: 10px; padding: 10px; margin: 4px -6px; border-bottom: none; }
+.tr-status.turn { background: var(--grad); color: #06112b; font-weight: 800; }
