@@ -472,7 +472,7 @@ select:focus { outline: none; border-color: var(--accent-2); }
 .tab-btn:hover { color: var(--text); }
 
 /* ============================ ADD TAB ============================ */
-.add-wrap { padding-top: 12px; padding-bottom: 80px; }
+.add-wrap { padding-top: 12px; }
 .add-action-bar { display: flex; align-items: center; gap: 8px; padding: 10px 0; flex-wrap: wrap; }
 .add-section { margin-top: 12px; }
 .add-sec-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--panel); border-radius: var(--radius) var(--radius) 0 0; border: 1px solid var(--line); }
@@ -493,7 +493,7 @@ select:focus { outline: none; border-color: var(--accent-2); }
 .add-card-count.multi { color: var(--gold); }
 
 /* ============================ TRADE TAB ============================ */
-.trade-wrap { padding-top: 16px; padding-bottom: 80px; }
+.trade-wrap { padding-top: 16px; }
 .trade-setup-box { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 16px; }
 .trade-setup-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .trade-setup-row input { flex: 1; min-width: 140px; height: 44px; padding: 0 12px; background: var(--card); border: 1px solid var(--line); color: var(--text); border-radius: 10px; font-size: 14px; }
@@ -509,3 +509,96 @@ select:focus { outline: none; border-color: var(--accent-2); }
 .trade-ct { font-size: 13px; font-weight: 700; color: var(--gold); white-space: nowrap; }
 .trade-btn { height: 34px; padding: 0 12px; font-size: 12px; }
 .small { font-size: 12px; }
+
+/* ============================ v7: KOMPAKTE ÜBERSICHT + HINZUFÜGEN ============================ */
+.tab-spacer { height: 84px; }
+
+/* Übersicht: Controls (Suche + Nationen-Dropdown) */
+.ov-controls { display: grid; grid-template-columns: 1fr 230px; gap: 10px; }
+@media (max-width: 560px){ .ov-controls { grid-template-columns: 1fr; } }
+.nation-select { width: 100%; }
+
+/* Kompakte Karten-Zeile (Übersicht & Hinzufügen) */
+.ov-list { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
+.row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 10px; border-radius: 12px;
+  background: var(--card); border: 1px solid var(--line);
+  cursor: pointer; transition: border-color .12s, background .12s;
+}
+.row:hover { border-color: var(--line-strong); }
+.row.owned {
+  background: linear-gradient(180deg, rgba(52,224,161,.13), rgba(63,182,255,.05));
+  border-color: rgba(52,224,161,.45);
+}
+.row.has-shine { box-shadow: inset 0 0 0 1px rgba(255,203,82,.4); }
+.r-num { font-size: 11px; font-weight: 800; letter-spacing: .3px; color: var(--muted-2); min-width: 46px; }
+.row.owned .r-num { color: var(--accent); }
+.r-name { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.r-name.empty { color: var(--muted-2); font-style: italic; font-weight: 400; }
+.row .s-tag { margin: 0; flex-shrink: 0; }
+.r-shine {
+  width: 28px; height: 28px; flex-shrink: 0; border-radius: 8px; padding: 0; line-height: 1; cursor: pointer; font-size: 13px;
+  border: 1px solid var(--line); background: rgba(255,255,255,.04); filter: grayscale(1) opacity(.5); transition: .12s;
+}
+.r-shine:hover { filter: none; border-color: var(--gold); }
+.r-shine.on { filter: none; border-color: var(--gold); background: rgba(255,203,82,.18); box-shadow: 0 0 8px rgba(255,203,82,.3); }
+.r-cnt { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.r-step {
+  width: 26px; height: 26px; border-radius: 8px; padding: 0; line-height: 1;
+  border: 1px solid var(--line); background: rgba(255,255,255,.05); color: var(--text);
+  cursor: pointer; font-size: 15px; transition: .12s;
+}
+.r-step:hover { border-color: var(--accent-2); background: rgba(63,182,255,.14); }
+.r-val { min-width: 20px; text-align: center; font-weight: 800; font-size: 13px; color: var(--muted); }
+.row.owned .r-val { color: var(--text); }
+.r-cnt.multi .r-val { color: var(--gold); }
+.r-edit { flex-shrink: 0; border: none; background: transparent; color: var(--muted-2); cursor: pointer; font-size: 13px; padding: 4px; }
+.r-edit:hover { color: var(--text); }
+
+/* Daten & Hilfe (eingeklappt unten in der Übersicht) */
+.data-foot { margin-top: 22px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); padding: 4px 16px; }
+.data-foot summary { cursor: pointer; font-weight: 700; font-size: 14px; padding: 12px 0; list-style: none; color: var(--muted); }
+.data-foot summary::-webkit-details-marker { display: none; }
+.data-foot summary::after { content: "▾"; float: right; transition: transform .2s; }
+.data-foot[open] summary::after { transform: rotate(180deg); }
+
+/* Hinzufügen: Controls (Suche + Filter-Button) */
+.add-controls { display: flex; gap: 10px; align-items: stretch; }
+.add-controls .search { flex: 1; }
+.filter-btn {
+  height: 52px; padding: 0 16px; border-radius: 14px; cursor: pointer; white-space: nowrap;
+  border: 1px solid var(--line); background: var(--card); color: var(--text);
+  font-weight: 700; font-size: 14px; display: inline-flex; align-items: center; gap: 7px;
+}
+.filter-btn.active { border-color: var(--accent-2); color: var(--accent-2); }
+.filter-badge { background: var(--accent-2); color: #06112b; font-size: 11px; font-weight: 800; border-radius: 99px; padding: 1px 7px; }
+.filter-panel {
+  margin-top: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 14px;
+  background: var(--card); display: flex; flex-direction: column; gap: 14px;
+}
+.filter-panel[hidden] { display: none; }
+.filter-lbl { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--muted); font-weight: 600; }
+.filter-lbl select { width: 100%; }
+.filter-checks { display: flex; flex-direction: column; gap: 12px; }
+.filter-check { display: flex; align-items: center; gap: 10px; font-size: 14px; cursor: pointer; color: var(--text); }
+.filter-check input { width: 19px; height: 19px; accent-color: var(--accent); cursor: pointer; }
+.filter-reset { align-self: flex-start; }
+
+/* Hinzufügen: Nationen-Akkordeon */
+.acc { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); margin-top: 8px; overflow: hidden; transition: border-color .2s; }
+.acc.complete { border-color: rgba(52,224,161,.4); }
+.acc-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px; cursor: pointer; user-select: none; }
+.acc-head:hover { background: rgba(255,255,255,.02); }
+.acc-flag { font-size: 22px; width: 30px; text-align: center; flex-shrink: 0; }
+.acc-info { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
+.acc-name { font-family: "Sora", sans-serif; font-weight: 700; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acc-name .check { color: var(--accent); }
+.acc-sub { font-size: 11px; color: var(--muted-2); }
+.acc-prog { font-size: 13px; color: var(--muted); font-weight: 600; white-space: nowrap; }
+.acc-prog b { color: var(--accent); }
+.acc-chev { color: var(--muted); font-size: 13px; transition: transform .2s; }
+.acc.open .acc-chev { transform: rotate(180deg); }
+.acc-body { padding: 6px 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.acc-empty { padding: 6px 4px; }
+.add-wrap { padding-top: 14px; }
