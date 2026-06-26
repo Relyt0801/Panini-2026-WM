@@ -8,11 +8,13 @@ const VARIANT_INITIAL = { Lila: "L", Bronze: "B", Silber: "S", Gold: "G" };
 /* ======================================================================
  * Sektionen + Karten aufbauen
  * ====================================================================== */
+const GROUP_ORDER = ["A","B","C","D","E","F","G","H","I","J","K","L"];
+
 const SECTIONS = [
-  { code: "FWC", name: "FWC · Spezial", flag: "🏆", conf: "Spezial", kind: "special" },
+  { code: "FWC",   name: "FWC · Spezial",  flag: "🏆", conf: "Spezial",   group: "Spezial",   kind: "special" },
   ...TEAMS.map((t) => ({ ...t, kind: "team" })),
-  { code: "EXTRA", name: "Extra-Sticker", flag: "✨", conf: "Extra", kind: "extra", bonus: true },
-  { code: "COCA", name: "Coca-Cola", flag: "🥤", conf: "Coca-Cola", kind: "coca", bonus: true },
+  { code: "EXTRA", name: "Extra-Sticker",   flag: "✨", conf: "Extra",     group: "Extra",     kind: "extra", bonus: true },
+  { code: "COCA",  name: "Coca-Cola",       flag: "🥤", conf: "Coca-Cola", group: "Coca-Cola", kind: "coca",  bonus: true },
 ];
 const sectionByCode = Object.fromEntries(SECTIONS.map((s) => [s.code, s]));
 
@@ -31,7 +33,7 @@ function buildCards() {
   for (let n = 0; n < FWC_SLOTS; n++) {
     cards.push({
       id: `FWC-${n}`, kind: "special", sectionCode: "FWC", sectionName: "FWC · Spezial",
-      flag: "🏆", conf: "Spezial", num: n, label: `FWC ${pad2(n)}`,
+      flag: "🏆", conf: "Spezial", group: "Spezial", num: n, label: `FWC ${pad2(n)}`,
       role: "Spezial", foil: n < 9, name: FWC_NAMES[n] || "", shinyEligible: false, bonus: false,
     });
   }
@@ -45,7 +47,7 @@ function buildCards() {
       if (!name && role !== "Spieler") name = role; // Wappen / Mannschaftsfoto
       cards.push({
         id: `${t.code}-${n}`, kind: "team", sectionCode: t.code, sectionName: t.name,
-        flag: t.flag, conf: t.conf, num: n, label: `${t.code} ${n}`,
+        flag: t.flag, conf: t.conf, group: t.group, num: n, label: `${t.code} ${n}`,
         role, foil, name, shinyEligible: t.code === "GER", bonus: false,
       });
     }
@@ -55,7 +57,7 @@ function buildCards() {
   for (let n = 1; n <= COCA_SLOTS; n++) {
     cards.push({
       id: `COCA-${n}`, kind: "coca", sectionCode: "COCA", sectionName: "Coca-Cola",
-      flag: "🥤", conf: "Coca-Cola", num: n, label: `CC ${n}`,
+      flag: "🥤", conf: "Coca-Cola", group: "Coca-Cola", num: n, label: `CC ${n}`,
       role: "Coca-Cola", foil: true, name: (typeof COCA_NAMES !== "undefined" && COCA_NAMES[n]) || "",
       shinyEligible: false, bonus: true,
     });
@@ -66,7 +68,7 @@ function buildCards() {
     EXTRA_VARIANTS.forEach((v) => {
       cards.push({
         id: `EXTRA-${idx}-${VARIANT_INITIAL[v]}`, kind: "extra", sectionCode: "EXTRA",
-        sectionName: "Extra-Sticker", flag: p.flag, conf: "Extra",
+        sectionName: "Extra-Sticker", flag: p.flag, conf: "Extra", group: "Extra",
         num: idx * 4 + EXTRA_VARIANTS.indexOf(v), label: `Extra · ${v}`,
         role: v, foil: true, variant: v, name: `${p.name} (${p.team})`,
         shinyEligible: false, bonus: true,
@@ -75,7 +77,8 @@ function buildCards() {
   });
 
   for (const c of cards) {
-    c.search = `${c.label} ${c.sectionCode} ${c.sectionName} ${c.name} ${c.role} ${c.conf}`.toLowerCase();
+    c.search = `${c.label} ${c.sectionCode} ${c.sectionName} ${c.name} ${c.role} ${c.conf} gruppe ${c.group || ""}`.toLowerCase();
+    c.searchNorm = c.search.replace(/\s+/g, "");
   }
   return cards;
 }
@@ -113,12 +116,12 @@ const nameOf = (c) => (STATE.names[c.id] != null ? STATE.names[c.id] : c.name);
  * UI-Status
  * ====================================================================== */
 const ui = { search: "", conf: "ALL", team: "ALL", view: "all", sort: "num" };
-const CONFS = ["Spezial", "Gastgeber", "UEFA", "CONMEBOL", "CONCACAF", "CAF", "AFC", "OFC", "Extra", "Coca-Cola"];
 const el = (id) => document.getElementById(id);
 
 function matchesSearch(c, q) {
   if (!q) return true;
-  return q.split(/\s+/).every((tok) => c.search.includes(tok));
+  const qNorm = q.replace(/\s+/g, "");
+  return q.split(/\s+/).every((tok) => c.search.includes(tok)) || c.searchNorm.includes(qNorm);
 }
 function passesView(c) {
   if (ui.view === "owned") return countOf(c.id) > 0;
@@ -127,7 +130,7 @@ function passesView(c) {
   return true;
 }
 function passesFilter(c) {
-  if (ui.conf !== "ALL" && c.conf !== ui.conf) return false;
+  if (ui.conf !== "ALL" && c.group !== ui.conf) return false;
   if (ui.team !== "ALL" && c.sectionCode !== ui.team) return false;
   return passesView(c) && matchesSearch(c, ui.search.trim().toLowerCase());
 }
@@ -233,13 +236,19 @@ function render() {
   const visible = CARDS.filter(passesFilter);
   el("resultInfo").innerHTML = `<b>${visible.length}</b> Karten angezeigt`;
 
-  // Gruppieren nach Sektion (in SECTIONS-Reihenfolge)
-  const order = SECTIONS.map((s) => s.code);
-  const groups = {};
-  for (const c of visible) (groups[c.sectionCode] ||= []).push(c);
+  // Gruppieren nach Sektion, sortiert nach WM-Gruppe
+  const ALL_GROUPS = ["Spezial", ...GROUP_ORDER, "Extra", "Coca-Cola"];
+  const groupSections = {};
+  for (const c of visible) (groupSections[c.sectionCode] ||= []).push(c);
 
   const host = el("sections");
-  const codes = Object.keys(groups).sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  const codes = Object.keys(groupSections).sort((a, b) => {
+    const ga = ALL_GROUPS.indexOf(sectionByCode[a].group);
+    const gb = ALL_GROUPS.indexOf(sectionByCode[b].group);
+    if (ga !== gb) return ga - gb;
+    return sectionByCode[a].name.localeCompare(sectionByCode[b].name, "de");
+  });
+  const groups = groupSections;
 
   if (codes.length === 0) {
     host.innerHTML = `<div class="empty"><div class="big">🔍</div>
@@ -258,7 +267,7 @@ function render() {
           </button>
           <span class="team-title" data-act="collapse" data-team="${code}">
             <span class="tname">${escapeHtml(s.name)}${ss.complete ? '<span class="check">✓</span>' : ""}</span>
-            <span class="tmeta"><span class="tcode">${code}</span><span class="tconf">${s.conf}</span></span>
+            <span class="tmeta"><span class="tcode">${code}</span><span class="tconf">${s.kind === "team" ? "Gruppe " + s.group : s.conf}</span></span>
           </span>
           <span class="team-prog">
             <span class="tcount"><b>${ss.owned}</b> / ${ss.total}</span>
@@ -376,8 +385,13 @@ function copyList() {
   navigator.clipboard?.writeText(text).then(() => toast(`${lines.length} Karten kopiert`), () => fallbackCopy(text));
 }
 function sortCardsGlobal(arr) {
-  const order = SECTIONS.map((s) => s.code);
-  return arr.slice().sort((a, b) => order.indexOf(a.sectionCode) - order.indexOf(b.sectionCode) || a.num - b.num);
+  const ALL_GROUPS = ["Spezial", ...GROUP_ORDER, "Extra", "Coca-Cola"];
+  return arr.slice().sort((a, b) => {
+    const ga = ALL_GROUPS.indexOf(a.group), gb = ALL_GROUPS.indexOf(b.group);
+    if (ga !== gb) return ga - gb;
+    if (a.sectionName !== b.sectionName) return a.sectionName.localeCompare(b.sectionName, "de");
+    return a.num - b.num;
+  });
 }
 function fallbackCopy(text) {
   const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta);
@@ -443,12 +457,15 @@ function burstConfetti() {
 function renderChips() {
   const box = el("confChips");
   const counts = {};
-  for (const c of CARDS) { const k = c.conf; (counts[k] ||= [0, 0]); counts[k][1]++; if (countOf(c.id) > 0) counts[k][0]++; }
+  for (const c of CARDS) { const k = c.group; (counts[k] ||= [0, 0]); counts[k][1]++; if (countOf(c.id) > 0) counts[k][0]++; }
   const allOwned = CARDS.filter((c) => countOf(c.id) > 0).length;
   const mk = (val, label, owned, total) => `<button class="chip ${ui.conf === val ? "active" : ""}" data-conf="${val}">${label} <span class="c-count">${owned}/${total}</span></button>`;
   if (!box.childElementCount) {
     let html = mk("ALL", "Alle", allOwned, CARDS.length);
-    for (const cf of CONFS) html += mk(cf, cf, (counts[cf] || [0, 0])[0], (counts[cf] || [0, 0])[1]);
+    html += mk("Spezial", "Spezial", (counts["Spezial"] || [0, 0])[0], (counts["Spezial"] || [0, 0])[1]);
+    for (const g of GROUP_ORDER) html += mk(g, "Gr. " + g, (counts[g] || [0, 0])[0], (counts[g] || [0, 0])[1]);
+    html += mk("Extra", "Extra ✨", (counts["Extra"] || [0, 0])[0], (counts["Extra"] || [0, 0])[1]);
+    html += mk("Coca-Cola", "Coca-Cola", (counts["Coca-Cola"] || [0, 0])[0], (counts["Coca-Cola"] || [0, 0])[1]);
     box.innerHTML = html;
     box.onclick = (e) => { const b = e.target.closest(".chip"); if (!b) return; ui.conf = b.dataset.conf; ui.team = "ALL"; el("teamSelect").value = "ALL"; render(); };
   } else {
@@ -462,11 +479,18 @@ function renderChips() {
 }
 
 function buildTeamSelect() {
+  const ALL_GROUPS = ["Spezial", ...GROUP_ORDER, "Extra", "Coca-Cola"];
+  const sorted = SECTIONS.slice().sort((a, b) => {
+    const ga = ALL_GROUPS.indexOf(a.group), gb = ALL_GROUPS.indexOf(b.group);
+    if (ga !== gb) return ga - gb;
+    return a.name.localeCompare(b.name, "de");
+  });
   const sel = el("teamSelect");
   sel.innerHTML = `<option value="ALL">Alle Sektionen</option>`;
   let grp = null, og = null;
-  for (const s of SECTIONS) {
-    if (s.conf !== grp) { grp = s.conf; og = document.createElement("optgroup"); og.label = s.conf; sel.appendChild(og); }
+  for (const s of sorted) {
+    const label = s.kind === "team" ? "Gruppe " + s.group : s.conf;
+    if (label !== grp) { grp = label; og = document.createElement("optgroup"); og.label = grp; sel.appendChild(og); }
     const o = document.createElement("option"); o.value = s.code; o.textContent = `${s.flag} ${s.name}`; og.appendChild(o);
   }
   sel.onchange = () => { ui.team = sel.value; render(); };
