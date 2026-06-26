@@ -6,6 +6,13 @@ const MINI_CIRC = 2 * Math.PI * 16;
 const VARIANT_INITIAL = { Lila: "L", Bronze: "B", Silber: "S", Gold: "G" };
 
 /* ======================================================================
+ * Normalisierung für Suche (Diakritika & Leerzeichen)
+ * ====================================================================== */
+function normalize(s) {
+  return String(s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+
+/* ======================================================================
  * Sektionen + Karten aufbauen
  * ====================================================================== */
 const GROUP_ORDER = ["A","B","C","D","E","F","G","H","I","J","K","L"];
@@ -31,10 +38,14 @@ function buildCards() {
 
   // FWC 00–19
   for (let n = 0; n < FWC_SLOTS; n++) {
+    const name = FWC_NAMES[n] || "";
+    const searchRaw = `fwc ${pad2(n)} fwc · spezial ${name} spezial spezial gruppe spezial`;
     cards.push({
       id: `FWC-${n}`, kind: "special", sectionCode: "FWC", sectionName: "FWC · Spezial",
       flag: "🏆", conf: "Spezial", group: "Spezial", num: n, label: `FWC ${pad2(n)}`,
-      role: "Spezial", foil: n < 9, name: FWC_NAMES[n] || "", shinyEligible: false, bonus: false,
+      role: "Spezial", foil: n < 9, name, shinyEligible: false, bonus: false,
+      search: searchRaw,
+      searchNorm: normalize(searchRaw).replace(/\s+/g, ""),
     });
   }
 
@@ -44,42 +55,49 @@ function buildCards() {
     for (let n = 1; n <= TEAM_SLOTS; n++) {
       const { role, foil } = roleFor(n);
       let name = pl[n] || "";
-      if (!name && role !== "Spieler") name = role; // Wappen / Mannschaftsfoto
+      if (!name && role !== "Spieler") name = role;
+      const searchRaw = `${t.code} ${n} ${t.name} ${name} ${role} ${t.conf} gruppe ${t.group || ""}`;
       cards.push({
         id: `${t.code}-${n}`, kind: "team", sectionCode: t.code, sectionName: t.name,
         flag: t.flag, conf: t.conf, group: t.group, num: n, label: `${t.code} ${n}`,
         role, foil, name, shinyEligible: t.code === "GER", bonus: false,
+        search: searchRaw.toLowerCase(),
+        searchNorm: normalize(searchRaw).replace(/\s+/g, ""),
       });
     }
   }
 
   // Coca-Cola CC1–CC12 (Bonus)
   for (let n = 1; n <= COCA_SLOTS; n++) {
+    const name = (typeof COCA_NAMES !== "undefined" && COCA_NAMES[n]) || "";
+    const searchRaw = `coca cc ${n} coca-cola ${name} coca-cola`;
     cards.push({
       id: `COCA-${n}`, kind: "coca", sectionCode: "COCA", sectionName: "Coca-Cola",
       flag: "🥤", conf: "Coca-Cola", group: "Coca-Cola", num: n, label: `CC ${n}`,
-      role: "Coca-Cola", foil: true, name: (typeof COCA_NAMES !== "undefined" && COCA_NAMES[n]) || "",
+      role: "Coca-Cola", foil: true, name,
       shinyEligible: false, bonus: true,
+      search: searchRaw.toLowerCase(),
+      searchNorm: normalize(searchRaw).replace(/\s+/g, ""),
     });
   }
 
   // Extra-Sticker: 20 Stars × 4 Varianten
   EXTRA_PLAYERS.forEach((p, idx) => {
     EXTRA_VARIANTS.forEach((v) => {
+      const fullName = `${p.name} (${p.team})`;
+      const searchRaw = `extra ${v} ${fullName} extra gruppe extra`;
       cards.push({
         id: `EXTRA-${idx}-${VARIANT_INITIAL[v]}`, kind: "extra", sectionCode: "EXTRA",
         sectionName: "Extra-Sticker", flag: p.flag, conf: "Extra", group: "Extra",
         num: idx * 4 + EXTRA_VARIANTS.indexOf(v), label: `Extra · ${v}`,
-        role: v, foil: true, variant: v, name: `${p.name} (${p.team})`,
+        role: v, foil: true, variant: v, name: fullName,
         shinyEligible: false, bonus: true,
+        search: searchRaw.toLowerCase(),
+        searchNorm: normalize(searchRaw).replace(/\s+/g, ""),
       });
     });
   });
 
-  for (const c of cards) {
-    c.search = `${c.label} ${c.sectionCode} ${c.sectionName} ${c.name} ${c.role} ${c.conf} gruppe ${c.group || ""}`.toLowerCase();
-    c.searchNorm = c.search.replace(/\s+/g, "");
-  }
   return cards;
 }
 
@@ -90,12 +108,18 @@ const BASE_TOTAL = CARDS.filter((c) => !c.bonus).length;
 /* ======================================================================
  * Persistenz
  * ====================================================================== */
-let STATE = { counts: {}, shiny: {}, names: {}, collapsed: {} };
+let STATE = { counts: {}, shiny: {}, names: {}, collapsed: {}, partner: null, tradeWanted: {} };
 
 function load() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) { STATE = Object.assign(STATE, JSON.parse(raw)); return; }
+    if (raw) {
+      STATE = Object.assign(STATE, JSON.parse(raw));
+      // Ensure new fields exist after migration
+      STATE.partner = STATE.partner || null;
+      STATE.tradeWanted = STATE.tradeWanted || {};
+      return;
+    }
     // Migration von v1 (owned/dupes -> counts)
     const old = localStorage.getItem("paniniWM2026.v1");
     if (old) {
@@ -120,8 +144,9 @@ const el = (id) => document.getElementById(id);
 
 function matchesSearch(c, q) {
   if (!q) return true;
-  const qNorm = q.replace(/\s+/g, "");
-  return q.split(/\s+/).every((tok) => c.search.includes(tok)) || c.searchNorm.includes(qNorm);
+  const qn = normalize(q);
+  const qNorm = qn.replace(/\s+/g, "");
+  return qn.split(/\s+/).every((tok) => c.searchNorm.includes(tok)) || c.searchNorm.includes(qNorm);
 }
 function passesView(c) {
   if (ui.view === "owned") return countOf(c.id) > 0;
@@ -132,7 +157,7 @@ function passesView(c) {
 function passesFilter(c) {
   if (ui.conf !== "ALL" && c.group !== ui.conf) return false;
   if (ui.team !== "ALL" && c.sectionCode !== ui.team) return false;
-  return passesView(c) && matchesSearch(c, ui.search.trim().toLowerCase());
+  return passesView(c) && matchesSearch(c, ui.search.trim());
 }
 
 /* ======================================================================
@@ -170,7 +195,7 @@ function refreshStats() {
 }
 
 /* ======================================================================
- * Rendering
+ * Rendering (Übersicht-Tab)
  * ====================================================================== */
 let prevComplete = new Set();
 let firstRender = true;
@@ -331,10 +356,9 @@ function applyChange(ids) {
 function setCount(id, n) {
   n = Math.max(0, n);
   if (n === 0) delete STATE.counts[id]; else STATE.counts[id] = n;
-  save();
 }
-function toggleOwned(id) { setCount(id, countOf(id) > 0 ? 0 : 1); applyChange([id]); }
-function changeCount(id, d) { setCount(id, countOf(id) + d); applyChange([id]); }
+function toggleOwned(id) { setCount(id, countOf(id) > 0 ? 0 : 1); save(); applyChange([id]); }
+function changeCount(id, d) { setCount(id, countOf(id) + d); save(); applyChange([id]); }
 function toggleShiny(id) {
   if (shinyOf(id)) delete STATE.shiny[id]; else STATE.shiny[id] = 1;
   if (STATE.shiny[id] && countOf(id) === 0) STATE.counts[id] = 1; // glänzend ⇒ besitzt Karte
@@ -414,7 +438,9 @@ function importData() {
     const f = inp.files[0]; if (!f) return;
     const r = new FileReader();
     r.onload = () => { try {
-      STATE = Object.assign({ counts: {}, shiny: {}, names: {}, collapsed: {} }, JSON.parse(r.result));
+      STATE = Object.assign({ counts: {}, shiny: {}, names: {}, collapsed: {}, partner: null, tradeWanted: {} }, JSON.parse(r.result));
+      STATE.partner = STATE.partner || null;
+      STATE.tradeWanted = STATE.tradeWanted || {};
       save(); render(); toast("Sammlung importiert");
     } catch (e) { toast("Datei konnte nicht gelesen werden"); } };
     r.readAsText(f);
@@ -423,7 +449,7 @@ function importData() {
 }
 function resetAll() {
   if (!confirm("Wirklich alles zurücksetzen (Karten, Anzahl, Glanz, Namen)?")) return;
-  STATE = { counts: {}, shiny: {}, names: {}, collapsed: {} }; prevComplete = new Set();
+  STATE = { counts: {}, shiny: {}, names: {}, collapsed: {}, partner: null, tradeWanted: {} }; prevComplete = new Set();
   save(); render(); toast("Zurückgesetzt");
 }
 
@@ -452,7 +478,7 @@ function burstConfetti() {
 }
 
 /* ======================================================================
- * Setup
+ * Setup (Übersicht)
  * ====================================================================== */
 function renderChips() {
   const box = el("confChips");
@@ -467,7 +493,7 @@ function renderChips() {
     html += mk("Extra", "Extra ✨", (counts["Extra"] || [0, 0])[0], (counts["Extra"] || [0, 0])[1]);
     html += mk("Coca-Cola", "Coca-Cola", (counts["Coca-Cola"] || [0, 0])[0], (counts["Coca-Cola"] || [0, 0])[1]);
     box.innerHTML = html;
-    box.onclick = (e) => { const b = e.target.closest(".chip"); if (!b) return; ui.conf = b.dataset.conf; ui.team = "ALL"; el("teamSelect").value = "ALL"; render(); };
+    box.onclick = (e) => { const b = e.target.closest(".chip"); if (!b) return; ui.conf = b.dataset.conf; ui.team = "ALL"; render(); };
   } else {
     box.querySelectorAll(".chip").forEach((b) => {
       const v = b.dataset.conf; b.classList.toggle("active", v === ui.conf);
@@ -476,24 +502,6 @@ function renderChips() {
       else cc.textContent = `${(counts[v] || [0, 0])[0]}/${(counts[v] || [0, 0])[1]}`;
     });
   }
-}
-
-function buildTeamSelect() {
-  const ALL_GROUPS = ["Spezial", ...GROUP_ORDER, "Extra", "Coca-Cola"];
-  const sorted = SECTIONS.slice().sort((a, b) => {
-    const ga = ALL_GROUPS.indexOf(a.group), gb = ALL_GROUPS.indexOf(b.group);
-    if (ga !== gb) return ga - gb;
-    return a.name.localeCompare(b.name, "de");
-  });
-  const sel = el("teamSelect");
-  sel.innerHTML = `<option value="ALL">Alle Sektionen</option>`;
-  let grp = null, og = null;
-  for (const s of sorted) {
-    const label = s.kind === "team" ? "Gruppe " + s.group : s.conf;
-    if (label !== grp) { grp = label; og = document.createElement("optgroup"); og.label = grp; sel.appendChild(og); }
-    const o = document.createElement("option"); o.value = s.code; o.textContent = `${s.flag} ${s.name}`; og.appendChild(o);
-  }
-  sel.onchange = () => { ui.team = sel.value; render(); };
 }
 
 function onSectionsClick(e) {
@@ -515,6 +523,274 @@ function onSectionsClick(e) {
   if (card) toggleOwned(card.dataset.id);
 }
 
+/* ======================================================================
+ * Tab-Navigation
+ * ====================================================================== */
+function switchTab(tab) {
+  document.querySelectorAll(".tab-pane").forEach(p => { p.hidden = true; });
+  document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
+  el("pane-" + tab).hidden = false;
+  window.scrollTo(0, 0);
+  if (tab === "add") renderAddTab();
+  if (tab === "trade") renderTradeTab();
+}
+
+/* ======================================================================
+ * Add Tab
+ * ====================================================================== */
+const addUi = { search: "", group: "ALL", selected: new Set() };
+
+function initAddTab() {
+  // Search
+  el("addSearchInput").addEventListener("input", (e) => {
+    addUi.search = e.target.value;
+    el("addSearchClear").hidden = !e.target.value;
+    renderAddTab();
+  });
+  el("addSearchClear").onclick = () => {
+    el("addSearchInput").value = ""; addUi.search = ""; el("addSearchClear").hidden = true; renderAddTab();
+  };
+
+  // Group chips
+  const box = el("addChips");
+  const groups = ["ALL", "Spezial", ...GROUP_ORDER, "Extra", "Coca-Cola"];
+  const labels = { ALL: "Alle", Spezial: "Spezial", Extra: "Extra ✨", "Coca-Cola": "Coca-Cola" };
+  let html = "";
+  for (const g of groups) {
+    const lbl = labels[g] || ("Gr. " + g);
+    html += `<button class="chip ${addUi.group === g ? "active" : ""}" data-addgroup="${g}">${lbl}</button>`;
+  }
+  box.innerHTML = html;
+  box.onclick = (e) => {
+    const b = e.target.closest("[data-addgroup]"); if (!b) return;
+    addUi.group = b.dataset.addgroup;
+    box.querySelectorAll(".chip").forEach(c => c.classList.toggle("active", c.dataset.addgroup === addUi.group));
+    renderAddTab();
+  };
+
+  // Select all / mark buttons
+  el("addSelAllBtn").onclick = () => {
+    const visible = getAddVisible();
+    const allSel = visible.every(c => addUi.selected.has(c.id));
+    if (allSel) { visible.forEach(c => addUi.selected.delete(c.id)); }
+    else { visible.forEach(c => addUi.selected.add(c.id)); }
+    renderAddTab();
+  };
+
+  el("addMarkBtn").onclick = () => {
+    let count = 0;
+    for (const id of addUi.selected) {
+      if (countOf(id) === 0) { setCount(id, 1); count++; }
+    }
+    addUi.selected.clear();
+    save(); refreshStats(); renderAddTab();
+    toast(count > 0 ? `${count} Karten als vorhanden markiert` : "Keine neuen Karten markiert");
+  };
+
+  // Card list clicks (delegation)
+  el("addSections").addEventListener("click", (e) => {
+    // Section "Alle" button
+    const secAllBtn = e.target.closest("[data-sec-all]");
+    if (secAllBtn) {
+      const code = secAllBtn.dataset.secAll;
+      const secCards = getAddVisible().filter(c => c.sectionCode === code);
+      const allSel = secCards.every(c => addUi.selected.has(c.id));
+      if (allSel) secCards.forEach(c => addUi.selected.delete(c.id));
+      else secCards.forEach(c => addUi.selected.add(c.id));
+      renderAddTab(); return;
+    }
+    // Card row click (toggle selection)
+    const row = e.target.closest(".add-card");
+    if (row) {
+      const id = row.dataset.id;
+      if (addUi.selected.has(id)) addUi.selected.delete(id); else addUi.selected.add(id);
+      renderAddTab();
+    }
+  });
+}
+
+function getAddVisible() {
+  const q = addUi.search.trim();
+  return CARDS.filter(c => {
+    if (addUi.group !== "ALL" && c.group !== addUi.group) return false;
+    if (q) return matchesSearch(c, q);
+    return true;
+  });
+}
+
+function renderAddTab() {
+  const visible = getAddVisible();
+
+  // Update selection count & button state
+  const selCount = addUi.selected.size;
+  el("addSelCount").textContent = selCount === 0 ? "0 ausgewählt" : `${selCount} ausgewählt`;
+  el("addMarkBtn").disabled = selCount === 0;
+
+  // Group by section, sorted by WM-group then name
+  const ALL_GROUPS = ["Spezial", ...GROUP_ORDER, "Extra", "Coca-Cola"];
+  const bySec = {};
+  for (const c of visible) (bySec[c.sectionCode] ||= []).push(c);
+  const codes = Object.keys(bySec).sort((a, b) => {
+    const ga = ALL_GROUPS.indexOf(sectionByCode[a].group);
+    const gb = ALL_GROUPS.indexOf(sectionByCode[b].group);
+    if (ga !== gb) return ga - gb;
+    return sectionByCode[a].name.localeCompare(sectionByCode[b].name, "de");
+  });
+
+  let html = "";
+  for (const code of codes) {
+    const s = sectionByCode[code];
+    const cards = bySec[code].slice().sort((a, b) => a.num - b.num);
+    const secCards = cards;
+    const allSecSel = secCards.every(c => addUi.selected.has(c.id));
+    const subLabel = s.kind === "team" ? "Gruppe " + s.group : s.conf;
+
+    html += `<div class="add-section">
+      <div class="add-sec-head">
+        <span style="font-size:22px">${s.flag}</span>
+        <div class="add-sec-info">
+          <span class="add-sec-name">${escapeHtml(s.name)}</span>
+          <span class="add-sec-sub">${subLabel}</span>
+        </div>
+        <button class="btn" data-sec-all="${code}">${allSecSel ? "Alle ab" : "Alle ✓"}</button>
+      </div>
+      <div class="add-card-list">`;
+
+    for (const c of cards) {
+      const n = countOf(c.id);
+      const owned = n > 0;
+      const sel = addUi.selected.has(c.id);
+      const displayName = nameOf(c) || c.role;
+      const countLabel = n === 0 ? "0×" : (n === 1 ? "1×" : `${n}×`);
+      html += `<div class="add-card${owned ? " owned" : ""}${sel ? " sel" : ""}" data-id="${c.id}">
+        <input type="checkbox" class="add-cb" ${sel ? "checked" : ""} tabindex="-1" onclick="return false" />
+        <span class="add-card-num">${escapeHtml(c.label)}</span>
+        <span class="add-card-name">${escapeHtml(displayName)}</span>
+        <span class="add-card-count${n >= 2 ? " multi" : ""}">${countLabel}</span>
+      </div>`;
+    }
+
+    html += `</div></div>`;
+  }
+
+  if (!html) html = `<div class="empty"><div class="big">🔍</div><p>Keine Karten gefunden.</p></div>`;
+  el("addSections").innerHTML = html;
+}
+
+/* ======================================================================
+ * Trade Tab
+ * ====================================================================== */
+function partnerCountOf(id) {
+  return STATE.partner ? (STATE.partner.counts[id] || 0) : 0;
+}
+
+function initTradeTab() {
+  el("tradeImportBtn").onclick = () => {
+    const inp = document.createElement("input"); inp.type = "file"; inp.accept = "application/json";
+    inp.onchange = () => {
+      const f = inp.files[0]; if (!f) return;
+      const r = new FileReader();
+      r.onload = () => { try {
+        const parsed = JSON.parse(r.result);
+        const name = el("tradePartnerName").value.trim() || f.name.replace(/\.json$/i, "");
+        STATE.partner = { name, counts: parsed.counts || {} };
+        STATE.tradeWanted = {};
+        save(); renderTradeTab(); toast("Partnersammlung geladen");
+      } catch (e) { toast("Datei konnte nicht gelesen werden"); } };
+      r.readAsText(f);
+    };
+    inp.click();
+  };
+
+  el("tradeClearBtn").onclick = () => {
+    STATE.partner = null; STATE.tradeWanted = {};
+    save(); renderTradeTab(); toast("Partner entfernt");
+  };
+
+  el("tradeGiveAllBtn").onclick = () => {
+    const giveCards = CARDS.filter(c => countOf(c.id) >= 2 && partnerCountOf(c.id) === 0);
+    for (const c of giveCards) { setCount(c.id, countOf(c.id) - 1); }
+    save(); renderTradeTab(); refreshStats(); toast(`${giveCards.length} Karten zugeteilt`);
+  };
+
+  el("tradeGetAllBtn").onclick = () => {
+    const getCards = CARDS.filter(c => partnerCountOf(c.id) >= 2 && countOf(c.id) === 0);
+    for (const c of getCards) { STATE.tradeWanted[c.id] = true; }
+    save(); renderTradeTab(); toast(`${getCards.length} Karten angefordert`);
+  };
+
+  el("tradeConfirmBtn").onclick = () => {
+    let count = 0;
+    for (const id in STATE.tradeWanted) {
+      if (countOf(id) === 0) { setCount(id, 1); count++; }
+    }
+    STATE.tradeWanted = {};
+    save(); refreshStats(); renderTradeTab(); toast(`${count} Karten als erhalten markiert`);
+  };
+
+  // Delegated clicks on trade lists
+  el("tradeContent").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-act][data-id]"); if (!btn) return;
+    const act = btn.dataset.act, id = btn.dataset.id;
+    if (act === "give") { setCount(id, countOf(id) - 1); save(); renderTradeTab(); refreshStats(); }
+    else if (act === "want") { STATE.tradeWanted[id] = true; save(); renderTradeTab(); }
+    else if (act === "unwant") { delete STATE.tradeWanted[id]; save(); renderTradeTab(); }
+  });
+}
+
+function renderTradeTab() {
+  const hasPartner = !!STATE.partner;
+  el("tradeContent").hidden = !hasPartner;
+  el("tradeClearBtn").hidden = !hasPartner;
+
+  if (hasPartner) {
+    el("tradePartnerName").value = STATE.partner.name;
+    el("tradePartnerStatus").textContent = `Partner: ${STATE.partner.name}`;
+    // Update partner name references
+    document.querySelectorAll(".partner-name-ref").forEach(s => s.textContent = STATE.partner.name);
+  } else {
+    el("tradePartnerStatus").textContent = "Noch kein Partner. JSON-Export der anderen Person importieren.";
+    return;
+  }
+
+  const giveCards = CARDS.filter(c => countOf(c.id) >= 2 && partnerCountOf(c.id) === 0);
+  const getCards = CARDS.filter(c => partnerCountOf(c.id) >= 2 && countOf(c.id) === 0);
+  const offerCards = CARDS.filter(c => countOf(c.id) >= 2 && partnerCountOf(c.id) > 0);
+  const wantedIds = Object.keys(STATE.tradeWanted);
+
+  el("tradeGiveCount").textContent = giveCards.length;
+  el("tradeGetCount").textContent = getCards.length;
+  el("tradeOfferCount").textContent = offerCards.length;
+  el("tradeWantedCount").textContent = wantedIds.length;
+  el("tradeWantedBlock").hidden = wantedIds.length === 0;
+
+  el("tradeGiveList").innerHTML = renderTradeRows(giveCards, "give");
+  el("tradeGetList").innerHTML = renderTradeRows(getCards, "want");
+  el("tradeOfferList").innerHTML = renderTradeRows(offerCards, null);
+  el("tradeWantedList").innerHTML = renderTradeRows(wantedIds.map(id => cardById[id]).filter(Boolean), "unwant");
+}
+
+function renderTradeRows(cards, action) {
+  if (!cards.length) return `<p class="muted small" style="padding:8px 0">Keine Karten</p>`;
+  return cards.map(c => {
+    const n = countOf(c.id);
+    const ctLabel = n >= 2 ? `${n}×` : (n === 1 ? "1×" : "0×");
+    let btnHtml = "";
+    if (action === "give") btnHtml = `<button class="btn trade-btn" data-act="give" data-id="${c.id}">−1 zuteilen</button>`;
+    else if (action === "want") btnHtml = `<button class="btn trade-btn" data-act="want" data-id="${c.id}">Anfordern</button>`;
+    else if (action === "unwant") btnHtml = `<button class="btn trade-btn btn-danger" data-act="unwant" data-id="${c.id}">Entfernen</button>`;
+    return `<div class="trade-row" data-id="${c.id}">
+      <span class="trade-num">${escapeHtml(c.label)}</span>
+      <span class="trade-name">${escapeHtml(nameOf(c))}</span>
+      ${n >= 2 ? `<span class="trade-ct">${ctLabel}</span>` : ""}
+      ${btnHtml}
+    </div>`;
+  }).join("");
+}
+
+/* ======================================================================
+ * Service Worker + Install
+ * ====================================================================== */
 function registerSW() {
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => navigator.serviceWorker.register("service-worker.js").catch(() => {}));
@@ -522,15 +798,17 @@ function registerSW() {
   let deferred = null;
   window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); deferred = e; el("installBtn").hidden = false; });
   el("installBtn").onclick = async () => {
-    if (!deferred) { toast("Über das Browser-Menü „Zum Startbildschirm“ installieren"); return; }
+    if (!deferred) { toast("Über das Browser-Menü „Zum Startbildschirm" installieren"); return; }
     deferred.prompt(); await deferred.userChoice; deferred = null; el("installBtn").hidden = true;
   };
   window.addEventListener("appinstalled", () => { el("installBtn").hidden = true; toast("App installiert 🎉"); });
 }
 
+/* ======================================================================
+ * Init
+ * ====================================================================== */
 function init() {
   load();
-  buildTeamSelect();
 
   el("searchInput").addEventListener("input", (e) => { ui.search = e.target.value; el("searchClear").hidden = !e.target.value; render(); });
   el("searchClear").onclick = () => { el("searchInput").value = ""; ui.search = ""; el("searchClear").hidden = true; render(); el("searchInput").focus(); };
@@ -557,6 +835,12 @@ function init() {
     if (e.key === "Enter" && !el("modal").hidden && e.target.tagName === "INPUT") el("modalSave").click();
     if (e.key === "/" && document.activeElement.tagName !== "INPUT") { e.preventDefault(); el("searchInput").focus(); }
   });
+
+  // Tab navigation
+  document.querySelectorAll(".tab-btn").forEach(b => b.onclick = () => switchTab(b.dataset.tab));
+
+  initAddTab();
+  initTradeTab();
 
   registerSW();
   render();
