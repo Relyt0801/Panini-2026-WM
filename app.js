@@ -819,6 +819,11 @@ function registerSW() {
  * Init
  * ====================================================================== */
 function init() {
+  // Guard: if key elements are missing the HTML is an old cached version — force reload
+  if (!el("addSearchInput") || !el("tradeImportBtn")) {
+    caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k)))).finally(() => location.reload());
+    return;
+  }
   load();
 
   el("searchInput").addEventListener("input", (e) => { ui.search = e.target.value; el("searchClear").hidden = !e.target.value; render(); });

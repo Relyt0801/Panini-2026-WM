@@ -1,8 +1,6 @@
 /* Panini WM 2026 Tracker – Service Worker (App-Shell offline-fähig) */
-const CACHE = "panini-wm2026-v4";
-const ASSETS = [
-  "./",
-  "./index.html",
+const CACHE = "panini-wm2026-v5";
+const SHELL = [
   "./styles.css",
   "./data.js",
   "./app.js",
@@ -12,7 +10,7 @@ const ASSETS = [
 ];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
 });
 
 self.addEventListener("activate", (e) => {
@@ -27,22 +25,36 @@ self.addEventListener("fetch", (e) => {
   if (req.method !== "GET") return;
   const url = new URL(req.url);
 
-  // App-eigene Dateien: cache-first (offline). Externes (Fonts): network-first mit Cache-Fallback.
-  if (url.origin === self.location.origin) {
-    e.respondWith(
-      caches.match(req).then((hit) => hit || fetch(req).then((res) => {
-        const copy = res.clone();
-        caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
-        return res;
-      }).catch(() => caches.match("./index.html")))
-    );
-  } else {
+  if (url.origin !== self.location.origin) {
+    // External (fonts etc.): network-first, cache fallback
     e.respondWith(
       fetch(req).then((res) => {
         const copy = res.clone();
         caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
         return res;
       }).catch(() => caches.match(req))
+    );
+    return;
+  }
+
+  const isHtml = req.headers.get("accept")?.includes("text/html") || url.pathname.endsWith(".html") || url.pathname === "/" || url.pathname.endsWith("/");
+  if (isHtml) {
+    // HTML: network-first so structure is always fresh; fall back to cache for offline
+    e.respondWith(
+      fetch(req).then((res) => {
+        const copy = res.clone();
+        caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
+        return res;
+      }).catch(() => caches.match(req).then((hit) => hit || caches.match("./index.html")))
+    );
+  } else {
+    // CSS/JS/images: cache-first for speed, network fallback
+    e.respondWith(
+      caches.match(req).then((hit) => hit || fetch(req).then((res) => {
+        const copy = res.clone();
+        caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
+        return res;
+      }))
     );
   }
 });
