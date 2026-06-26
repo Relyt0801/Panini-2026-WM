@@ -453,9 +453,11 @@ function importData() {
     const f = inp.files[0]; if (!f) return;
     const r = new FileReader();
     r.onload = () => { try {
+      const keepTrade = STATE.trade;           // Gruppen-Mitgliedschaft beim Backup-Import erhalten
       STATE = Object.assign({ counts: {}, shiny: {}, names: {}, collapsed: {}, partner: null, tradeWanted: {} }, JSON.parse(r.result));
       STATE.partner = STATE.partner || null;
       STATE.tradeWanted = STATE.tradeWanted || {};
+      if (!STATE.trade && keepTrade) STATE.trade = keepTrade;
       save(); renderOverview(); toast("Sammlung importiert");
     } catch (e) { toast("Datei konnte nicht gelesen werden"); } };
     r.readAsText(f);
@@ -499,42 +501,13 @@ function switchTab(tab) {
   window.scrollTo(0, 0);
   if (tab === "overview") renderOverview();
   else if (tab === "add") renderAddTab();
-  else if (tab === "trade") renderTradeTab();
+  else if (tab === "trade") enterTradeTab();
 }
 
 /* ======================================================================
- * Tauschen-Tab (vorerst: Skeleton + Partner-Import)
- * Die Auswahl-/Sync-Logik folgt, sobald der Mechanismus festgelegt ist.
+ * Tauschen-Tab: Logik liegt in trade.js (initTradeTab / renderTradeTab /
+ * enterTradeTab werden dort definiert und hier aufgerufen).
  * ====================================================================== */
-function initTradeTab() {
-  el("tradeImportBtn").onclick = () => {
-    const inp = document.createElement("input"); inp.type = "file"; inp.accept = "application/json";
-    inp.onchange = () => {
-      const f = inp.files[0]; if (!f) return;
-      const r = new FileReader();
-      r.onload = () => { try {
-        const parsed = JSON.parse(r.result);
-        const name = f.name.replace(/\.json$/i, "");
-        STATE.partner = { name, counts: parsed.counts || {} };
-        STATE.tradeWanted = {};
-        save(); renderTradeTab(); toast("Partnersammlung geladen");
-      } catch (e) { toast("Datei konnte nicht gelesen werden"); } };
-      r.readAsText(f);
-    };
-    inp.click();
-  };
-  el("tradeClearBtn").onclick = () => {
-    STATE.partner = null; STATE.tradeWanted = {};
-    save(); renderTradeTab(); toast("Partner entfernt");
-  };
-}
-function renderTradeTab() {
-  const hasPartner = !!STATE.partner;
-  el("tradeClearBtn").hidden = !hasPartner;
-  el("tradePartnerStatus").textContent = hasPartner
-    ? `✓ Partner „${STATE.partner.name}“ geladen (${Object.keys(STATE.partner.counts).length} Karten). Auswahl-Funktion folgt.`
-    : "";
-}
 
 /* ======================================================================
  * Service Worker + Install
@@ -567,7 +540,7 @@ function registerSW() {
  * ====================================================================== */
 function init() {
   // Guard: alte gecachte HTML-Version -> Cache leeren & neu laden
-  if (!el("nationSelect") || !el("addFilterBtn") || !el("tradeImportBtn")) {
+  if (!el("nationSelect") || !el("addFilterBtn") || !el("tradeRoot")) {
     caches.keys().then((keys) => Promise.all(keys.map((k) => caches.delete(k)))).finally(() => location.reload());
     return;
   }
