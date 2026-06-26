@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Panini WM 2026 · Sticker-Tracker</title>
-  <meta name="description" content="Panini WM 2026 Sticker-Tracker: abhaken, doppelte & fehlende verwalten, nach Ländern filtern, nach Name/Nummer suchen. Installierbar (PWA)." />
+  <meta name="description" content="Panini WM 2026 Sticker-Tracker: abhaken, doppelte & fehlende verwalten, nach Nationalität filtern, nach Name/Nummer suchen. Installierbar (PWA)." />
   <meta name="theme-color" content="#0a0f1f" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icons/icon-192.png" />
@@ -18,8 +18,8 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <!-- ======================= HERO ======================= -->
-  <header class="hero">
+  <!-- ======================= HERO (nur Übersicht) ======================= -->
+  <header class="hero" id="hero">
     <div class="hero-glow"></div>
     <div class="hero-inner">
       <div class="hero-brand">
@@ -51,97 +51,88 @@
     </div>
   </header>
 
-  <!-- ======================= TABS ======================= -->
+  <!-- ======================= ÜBERSICHT ======================= -->
   <div id="pane-overview" class="tab-pane">
-    <!-- ======================= TOOLBAR ======================= -->
     <div class="toolbar-sticky">
       <div class="wrap">
-        <div class="controls">
+        <div class="controls ov-controls">
           <div class="search">
             <span class="icon">🔎</span>
-            <input id="searchInput" type="search" placeholder="Suche „GER 12“, „Nmecha“, „Messi Gold“ …  (Taste /)" autocomplete="off" />
+            <input id="searchInput" type="search" placeholder="Suche „GER 12“, „Nmecha“, „Messi Gold“ …" autocomplete="off" />
             <button id="searchClear" class="search-clear" title="Leeren" hidden>✕</button>
           </div>
-          <select id="sortSelect" aria-label="Sortierung">
-            <option value="num">Nach Nummer</option>
-            <option value="name">Nach Name (A–Z)</option>
-            <option value="missing">Fehlende zuerst</option>
-          </select>
+          <select id="nationSelect" class="nation-select" aria-label="Nach Nationalität filtern"></select>
         </div>
-        <div class="seg" id="viewSeg" role="tablist">
-          <button class="seg-btn active" data-view="all">Alle</button>
-          <button class="seg-btn" data-view="owned">✓ Habe ich</button>
-          <button class="seg-btn" data-view="missing">Fehlen mir</button>
-          <button class="seg-btn" data-view="dupes">⇄ Doppelte</button>
-        </div>
-        <div class="chips" id="confChips"></div>
       </div>
     </div>
 
-    <!-- ======================= INHALT ======================= -->
     <main class="wrap">
       <div class="result-bar">
         <span id="resultInfo" class="result-info"></span>
         <div class="result-actions">
           <button class="link-btn" id="btnCopyList">📋 Liste kopieren</button>
-          <span class="dot">·</span>
-          <button class="link-btn" id="btnExpand">Aufklappen</button>
-          <span class="dot">·</span>
-          <button class="link-btn" id="btnCollapse">Zuklappen</button>
         </div>
       </div>
 
-      <div id="sections"></div>
+      <div id="overviewList" class="ov-list"></div>
 
-      <section class="datacard">
-        <h3>ℹ️ So funktioniert's</h3>
+      <details class="data-foot">
+        <summary>⚙️ Daten & Hilfe</summary>
         <ul class="howto">
           <li><b>Karte antippen</b> = „habe ich“. Mit <b>−/+</b> die Anzahl ändern (Doppelte).</li>
-          <li><b>Alle ✓</b> im Team-Kopf hakt ein ganzes Team auf einmal ab (nochmal = leeren).</li>
+          <li>Im <b>Hinzufügen</b>-Tab eine ganze Nation aufklappen und schnell abhaken.</li>
           <li><b>✨</b> auf DFB-Karten markiert die <b>Glanz-Variante</b> (nur Deutschland).</li>
-          <li><b>Doppelte / Fehlen mir</b> oben umschalten und mit <b>📋 Liste kopieren</b> als Tauschliste teilen.</li>
           <li>Suche nach Nummer (<code>GER 12</code>), Name (<code>Nmecha</code>) oder Extra (<code>Messi Gold</code>).</li>
         </ul>
-        <p class="muted">
-          980 Basis-Sticker (FWC 00–19 + 48 Teams à 1–20) plus 20 Extra-Sticker in
-          4 Varianten. Spielernamen sind editierbare Vorschau (✎), bis Panini die
-          offizielle Liste bestätigt. Daten liegen lokal im Browser – ab und zu exportieren.
+        <p class="muted small">
+          980 Basis-Sticker (FWC 00–19 + 48 Teams à 1–20) plus 20 Extra-Sticker in 4 Varianten.
+          Daten liegen lokal im Browser – ab und zu exportieren.
         </p>
         <div class="datacard-actions">
           <button class="btn" id="btnExport">↓ Export</button>
           <button class="btn" id="btnImport">↑ Import</button>
           <button class="btn btn-danger" id="btnReset">Zurücksetzen</button>
         </div>
-      </section>
+      </details>
 
       <footer class="foot">Inoffizielles Hilfstool für Sammler · keine Verbindung zu Panini oder der FIFA.</footer>
     </main>
-    <div style="height:72px"></div>
+    <div class="tab-spacer"></div>
   </div><!-- /pane-overview -->
 
-  <!-- ======================= ADD TAB ======================= -->
+  <!-- ======================= HINZUFÜGEN ======================= -->
   <div id="pane-add" class="tab-pane" hidden>
     <div class="toolbar-sticky">
       <div class="wrap">
-        <div class="search">
-          <span class="icon">🔎</span>
-          <input id="addSearchInput" type="search" placeholder="Nation, Spieler, Nummer …" autocomplete="off" />
-          <button id="addSearchClear" class="search-clear" hidden>✕</button>
+        <div class="add-controls">
+          <div class="search">
+            <span class="icon">🔎</span>
+            <input id="addSearchInput" type="search" placeholder="Nation, Spieler, Nummer …" autocomplete="off" />
+            <button id="addSearchClear" class="search-clear" hidden>✕</button>
+          </div>
+          <button id="addFilterBtn" class="filter-btn">⚙ Filter <span class="filter-badge" id="addFilterBadge" hidden></span></button>
         </div>
-        <div class="chips" id="addChips"></div>
+        <div id="addFilterPanel" class="filter-panel" hidden>
+          <label class="filter-lbl">Nationalität
+            <select id="addNationSelect" aria-label="Nationalität filtern"></select>
+          </label>
+          <div class="filter-checks">
+            <label class="filter-check"><input type="checkbox" id="fltMissing" /> Nur fehlende Karten</label>
+            <label class="filter-check"><input type="checkbox" id="fltDupes" /> Nur doppelte Karten</label>
+            <label class="filter-check"><input type="checkbox" id="fltSpecial" /> Nur Spezialkarten</label>
+          </div>
+          <button class="btn filter-reset" id="addFilterReset">Filter zurücksetzen</button>
+        </div>
       </div>
     </div>
+
     <div class="wrap add-wrap">
-      <div class="add-action-bar">
-        <span id="addSelCount" class="muted">0 ausgewählt</span>
-        <button class="btn" id="addSelAllBtn">Alle auswählen</button>
-        <button class="btn btn-primary" id="addMarkBtn" disabled>✓ Markieren</button>
-      </div>
       <div id="addSections"></div>
     </div>
+    <div class="tab-spacer"></div>
   </div><!-- /pane-add -->
 
-  <!-- ======================= TRADE TAB ======================= -->
+  <!-- ======================= TAUSCHEN ======================= -->
   <div id="pane-trade" class="tab-pane" hidden>
     <div class="wrap trade-wrap">
       <!-- Partner Setup -->
@@ -200,6 +191,7 @@
         </div>
       </div>
     </div>
+    <div class="tab-spacer"></div>
   </div><!-- /pane-trade -->
 
   <!-- ======================= BOTTOM NAV ======================= -->

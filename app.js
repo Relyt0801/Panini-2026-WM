@@ -2,7 +2,6 @@
 
 const STORAGE_KEY = "paniniWM2026.v2";
 const RING_CIRC = 2 * Math.PI * 52;
-const MINI_CIRC = 2 * Math.PI * 16;
 const VARIANT_INITIAL = { Lila: "L", Bronze: "B", Silber: "S", Gold: "G" };
 
 /* ======================================================================
@@ -16,6 +15,7 @@ function normalize(s) {
  * Sektionen + Karten aufbauen
  * ====================================================================== */
 const GROUP_ORDER = ["A","B","C","D","E","F","G","H","I","J","K","L"];
+const ALL_GROUPS = ["Spezial", ...GROUP_ORDER, "Extra", "Coca-Cola"];
 
 const SECTIONS = [
   { code: "FWC",   name: "FWC · Spezial",  flag: "🏆", conf: "Spezial",   group: "Spezial",   kind: "special" },
@@ -115,12 +115,10 @@ function load() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       STATE = Object.assign(STATE, JSON.parse(raw));
-      // Ensure new fields exist after migration
       STATE.partner = STATE.partner || null;
       STATE.tradeWanted = STATE.tradeWanted || {};
       return;
     }
-    // Migration von v1 (owned/dupes -> counts)
     const old = localStorage.getItem("paniniWM2026.v1");
     if (old) {
       const o = JSON.parse(old);
@@ -137,10 +135,15 @@ const shinyOf = (id) => STATE.shiny[id] || 0;
 const nameOf = (c) => (STATE.names[c.id] != null ? STATE.names[c.id] : c.name);
 
 /* ======================================================================
- * UI-Status
+ * Helfer
  * ====================================================================== */
-const ui = { search: "", conf: "ALL", team: "ALL", view: "all", sort: "num" };
 const el = (id) => document.getElementById(id);
+let CURRENT_TAB = "overview";
+
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+function escapeAttr(s) { return escapeHtml(s); }
+let toastTimer;
+function toast(msg) { const t = el("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), 1900); }
 
 function matchesSearch(c, q) {
   if (!q) return true;
@@ -148,16 +151,32 @@ function matchesSearch(c, q) {
   const qNorm = qn.replace(/\s+/g, "");
   return qn.split(/\s+/).every((tok) => c.searchNorm.includes(tok)) || c.searchNorm.includes(qNorm);
 }
-function passesView(c) {
-  if (ui.view === "owned") return countOf(c.id) > 0;
-  if (ui.view === "missing") return countOf(c.id) === 0;
-  if (ui.view === "dupes") return countOf(c.id) >= 2 || shinyOf(c.id) >= 2;
-  return true;
+function isSpecial(c) {
+  return c.foil || c.kind === "extra" || c.kind === "coca" || c.role === "Spezial";
 }
-function passesFilter(c) {
-  if (ui.conf !== "ALL" && c.group !== ui.conf) return false;
-  if (ui.team !== "ALL" && c.sectionCode !== ui.team) return false;
-  return passesView(c) && matchesSearch(c, ui.search.trim());
+function byGroupThenName(a, b) {
+  const ga = ALL_GROUPS.indexOf(sectionByCode[a].group), gb = ALL_GROUPS.indexOf(sectionByCode[b].group);
+  if (ga !== gb) return ga - gb;
+  return sectionByCode[a].name.localeCompare(sectionByCode[b].name, "de");
+}
+function emptyHtml(msg) {
+  return `<div class="empty"><div class="big">🔍</div><p>${msg || "Keine Karten gefunden."}</p></div>`;
+}
+
+/* ======================================================================
+ * Nationen-Dropdown (mit Flaggen, nach WM-Gruppe sortiert)
+ * ====================================================================== */
+function buildNationOptions() {
+  let html = `<option value="ALL">🌍 Alle Nationen</option>`;
+  for (const g of ALL_GROUPS) {
+    const secs = SECTIONS.filter((s) => s.group === g).sort((a, b) => a.name.localeCompare(b.name, "de"));
+    if (!secs.length) continue;
+    const label = g === "Spezial" ? "Spezial" : g === "Extra" ? "Extra" : g === "Coca-Cola" ? "Coca-Cola" : "Gruppe " + g;
+    html += `<optgroup label="${label}">`;
+    for (const s of secs) html += `<option value="${s.code}">${s.flag} ${escapeHtml(s.name)}</option>`;
+    html += `</optgroup>`;
+  }
+  return html;
 }
 
 /* ======================================================================
@@ -180,7 +199,6 @@ function computeStats() {
   }
   return { ownedBase, missingBase: BASE_TOTAL - ownedBase, doubles, complete };
 }
-
 function refreshStats() {
   const st = computeStats();
   const pct = Math.round((st.ownedBase / BASE_TOTAL) * 100);
@@ -193,161 +211,84 @@ function refreshStats() {
   el("statComplete").textContent = st.complete;
   return st;
 }
-
-/* ======================================================================
- * Rendering (Übersicht-Tab)
- * ====================================================================== */
-let prevComplete = new Set();
-let firstRender = true;
-
 function sectionStats(code) {
   const cs = CARDS.filter((c) => c.sectionCode === code);
   const owned = cs.filter((c) => countOf(c.id) > 0).length;
   return { owned, total: cs.length, pct: cs.length ? owned / cs.length : 0, complete: owned === cs.length && cs.length > 0 };
 }
 
-function sortCards(arr) {
-  const a = arr.slice();
-  if (ui.sort === "name") a.sort((x, y) => (nameOf(x) || "~").localeCompare(nameOf(y) || "~", "de") || x.num - y.num);
-  else if (ui.sort === "missing") a.sort((x, y) => (countOf(x.id) > 0) - (countOf(y.id) > 0) || x.num - y.num);
-  else a.sort((x, y) => x.num - y.num);
-  return a;
+/* ======================================================================
+ * Kompakte Karten-Zeile (für Übersicht & Hinzufügen)
+ * ====================================================================== */
+function specialTag(c) {
+  if (c.kind === "extra") return `<span class="s-tag var-${VARIANT_INITIAL[c.variant]}">${c.variant}</span>`;
+  if (c.kind === "coca") return `<span class="s-tag cola">CC</span>`;
+  if (c.shinyEligible && shinyOf(c.id)) return `<span class="s-tag foil">✨ Glanz</span>`;
+  if (c.foil) return `<span class="s-tag foil">✦ Folie</span>`;
+  if (c.role === "Mannschaftsfoto") return `<span class="s-tag team-tag">Team</span>`;
+  if (c.role === "Spezial") return `<span class="s-tag spec">Spezial</span>`;
+  return "";
 }
-
-function cardInner(c) {
+function rowClasses(c) {
+  return "row" + (countOf(c.id) > 0 ? " owned" : "") + (shinyOf(c.id) ? " has-shine" : "");
+}
+function rowInner(c) {
   const n = countOf(c.id);
-  const owned = n > 0;
   const hasName = !!nameOf(c);
-  const nameText = hasName ? nameOf(c) : (c.role === "Spieler" ? "Spieler – Name eintragen" : "—");
-  let tag = "";
-  if (c.kind === "extra") tag = `<span class="s-tag var-${VARIANT_INITIAL[c.variant]}">${c.variant}</span>`;
-  else if (c.kind === "coca") tag = `<span class="s-tag cola">Coca-Cola</span>`;
-  else if (c.foil) tag = `<span class="s-tag foil">✦ Folie</span>`;
-  else if (c.role === "Mannschaftsfoto") tag = `<span class="s-tag team-tag">Team</span>`;
-  else if (c.role === "Spezial") tag = `<span class="s-tag spec">Spezial</span>`;
-
+  const nameText = hasName ? nameOf(c) : (c.role === "Spieler" ? "Name eintragen" : (c.role || "—"));
+  const tag = specialTag(c);
   const shiny = c.shinyEligible
-    ? `<button class="shine ${shinyOf(c.id) ? "on" : ""}" data-act="shiny" title="Glänzend (DFB) besitzen">✨</button>`
-    : "";
-
+    ? `<button class="r-shine ${shinyOf(c.id) ? "on" : ""}" data-act="shiny" title="Glanz-Variante (DFB)">✨</button>` : "";
   return `
-    <span class="s-num">${c.label}</span>
-    <span class="s-name ${hasName ? "" : "empty"}">${escapeHtml(nameText)}</span>
+    <span class="r-num">${escapeHtml(c.label)}</span>
+    <span class="r-name ${hasName ? "" : "empty"}">${escapeHtml(nameText)}</span>
     ${tag}
-    <div class="s-row">
-      <span class="cnt ${n >= 2 ? "multi" : ""}">
-        <button class="step" data-act="minus" aria-label="weniger">−</button>
-        <span class="val">${n}</span>
-        <button class="step" data-act="plus" aria-label="mehr">+</button>
-      </span>
-      ${shiny}
-      <button class="s-edit" data-act="edit" title="Name bearbeiten">✎</button>
-    </div>`;
+    ${shiny}
+    <span class="r-cnt ${n >= 2 ? "multi" : ""}">
+      <button class="r-step" data-act="minus" aria-label="weniger">−</button>
+      <span class="r-val">${n}</span>
+      <button class="r-step" data-act="plus" aria-label="mehr">+</button>
+    </span>`;
+}
+function rowHtml(c) {
+  return `<div class="${rowClasses(c)}" data-id="${c.id}">${rowInner(c)}</div>`;
 }
 
-function cardClasses(c) {
-  return "sticker"
-    + (countOf(c.id) > 0 ? " owned" : "")
-    + (c.foil ? " is-foil" : "")
-    + (c.kind === "extra" ? " is-extra var-bg-" + VARIANT_INITIAL[c.variant] : "")
-    + (c.kind === "coca" ? " is-coca" : "")
-    + (shinyOf(c.id) ? " has-shine" : "");
-}
+/* ======================================================================
+ * Inkrementelle Updates
+ * ====================================================================== */
+let prevComplete = new Set();
+let firstRender = true;
 
-function render() {
-  const st = refreshStats();
-  renderChips();
-
-  const visible = CARDS.filter(passesFilter);
-  el("resultInfo").innerHTML = `<b>${visible.length}</b> Karten angezeigt`;
-
-  // Gruppieren nach Sektion, sortiert nach WM-Gruppe
-  const ALL_GROUPS = ["Spezial", ...GROUP_ORDER, "Extra", "Coca-Cola"];
-  const groupSections = {};
-  for (const c of visible) (groupSections[c.sectionCode] ||= []).push(c);
-
-  const host = el("sections");
-  const codes = Object.keys(groupSections).sort((a, b) => {
-    const ga = ALL_GROUPS.indexOf(sectionByCode[a].group);
-    const gb = ALL_GROUPS.indexOf(sectionByCode[b].group);
-    if (ga !== gb) return ga - gb;
-    return sectionByCode[a].name.localeCompare(sectionByCode[b].name, "de");
-  });
-  const groups = groupSections;
-
-  if (codes.length === 0) {
-    host.innerHTML = `<div class="empty"><div class="big">🔍</div>
-      <p>Keine Karten gefunden.<br>Such- oder Filtereinstellungen anpassen.</p></div>`;
-  } else {
-    let html = "";
-    for (const code of codes) {
-      const s = sectionByCode[code];
-      const ss = sectionStats(code);
-      const collapsed = STATE.collapsed[code];
-      html += `
-      <section class="team${ss.complete ? " complete" : ""}${collapsed ? " collapsed" : ""}" data-section="${code}">
-        <div class="team-head">
-          <button class="team-toggle" data-act="collapse" data-team="${code}" aria-label="Auf-/Zuklappen">
-            <span class="flag-badge">${s.flag}</span>
-          </button>
-          <span class="team-title" data-act="collapse" data-team="${code}">
-            <span class="tname">${escapeHtml(s.name)}${ss.complete ? '<span class="check">✓</span>' : ""}</span>
-            <span class="tmeta"><span class="tcode">${code}</span><span class="tconf">${s.kind === "team" ? "Gruppe " + s.group : s.conf}</span></span>
-          </span>
-          <span class="team-prog">
-            <span class="tcount"><b>${ss.owned}</b> / ${ss.total}</span>
-            <svg class="mini-ring" viewBox="0 0 40 40"><circle class="mr-bg" cx="20" cy="20" r="16"></circle>
-              <circle class="mr-fg" cx="20" cy="20" r="16" style="stroke-dasharray:${MINI_CIRC};stroke-dashoffset:${MINI_CIRC * (1 - ss.pct)}"></circle></svg>
-            <button class="btn-check" data-act="team-all" data-team="${code}" title="Ganzes Team abhaken / leeren">${ss.complete ? "Leeren" : "Alle ✓"}</button>
-            <span class="chev" data-act="collapse" data-team="${code}">▾</span>
-          </span>
-        </div>
-        <div class="grid">
-          ${sortCards(groups[code]).map((c) => `<div class="${cardClasses(c)}" data-id="${c.id}">${cardInner(c)}</div>`).join("")}
-        </div>
-      </section>`;
-    }
-    host.innerHTML = html;
-  }
-
-  // Konfetti bei frisch komplettem Team
-  const completeNow = new Set(SECTIONS.filter((s) => s.kind === "team" && sectionStats(s.code).complete).map((s) => s.code));
-  if (!firstRender) for (const code of completeNow) if (!prevComplete.has(code)) { burstConfetti(); break; }
-  prevComplete = completeNow; firstRender = false;
-}
-
-/* Inkrementelles Update einer Karte (schnelles Massen-Abhaken) */
-function refreshCard(id) {
+function refreshRow(id) {
   const c = cardById[id];
-  const node = el("sections").querySelector(`.sticker[data-id="${CSS.escape(id)}"]`);
-  if (node) { node.className = cardClasses(c); node.innerHTML = cardInner(c); }
+  document.querySelectorAll(`.row[data-id="${CSS.escape(id)}"]`).forEach((node) => {
+    node.className = rowClasses(c);
+    node.innerHTML = rowInner(c);
+  });
 }
-function refreshSectionHeader(code) {
-  const sec = el("sections").querySelector(`section[data-section="${CSS.escape(code)}"]`);
+function refreshAddHeader(code) {
+  const sec = el("addSections").querySelector(`section.acc[data-section="${CSS.escape(code)}"]`);
   if (!sec) return;
   const ss = sectionStats(code);
   sec.classList.toggle("complete", ss.complete);
-  sec.querySelector(".tcount").innerHTML = `<b>${ss.owned}</b> / ${ss.total}`;
-  sec.querySelector(".mr-fg").style.strokeDashoffset = MINI_CIRC * (1 - ss.pct);
+  const prog = sec.querySelector(".acc-prog"); if (prog) prog.innerHTML = `<b>${ss.owned}</b>/${ss.total}`;
   const btn = sec.querySelector(".btn-check"); if (btn) btn.textContent = ss.complete ? "Leeren" : "Alle ✓";
-  const tn = sec.querySelector(".tname");
-  if (tn) tn.innerHTML = `${escapeHtml(sectionByCode[code].name)}${ss.complete ? '<span class="check">✓</span>' : ""}`;
+  const nm = sec.querySelector(".acc-name");
+  if (nm) nm.innerHTML = `${escapeHtml(sectionByCode[code].name)}${ss.complete ? ' <span class="check">✓</span>' : ""}`;
 }
-
-/* Nach Zustandsänderung: in 'Alle'-Ansicht schnell inkrementell, sonst neu rendern */
 function applyChange(ids) {
-  if (ui.view === "all") {
-    const secs = new Set();
-    for (const id of ids) { refreshCard(id); secs.add(cardById[id].sectionCode); }
-    secs.forEach(refreshSectionHeader);
-    const st = refreshStats();
-    // Konfetti, wenn Team gerade komplett
-    const completeNow = new Set(SECTIONS.filter((s) => s.kind === "team" && sectionStats(s.code).complete).map((s) => s.code));
-    for (const code of completeNow) if (!prevComplete.has(code)) { burstConfetti(); break; }
-    prevComplete = completeNow;
+  refreshStats();
+  if (CURRENT_TAB === "add" && addFiltersActive()) {
+    renderAddTab();
   } else {
-    render();
+    const secs = new Set();
+    for (const id of ids) { refreshRow(id); secs.add(cardById[id].sectionCode); }
+    if (CURRENT_TAB === "add") secs.forEach(refreshAddHeader);
   }
+  const completeNow = new Set(SECTIONS.filter((s) => s.kind === "team" && sectionStats(s.code).complete).map((s) => s.code));
+  if (!firstRender) for (const code of completeNow) if (!prevComplete.has(code)) { burstConfetti(); break; }
+  prevComplete = completeNow; firstRender = false;
 }
 
 /* ======================================================================
@@ -361,7 +302,7 @@ function toggleOwned(id) { setCount(id, countOf(id) > 0 ? 0 : 1); save(); applyC
 function changeCount(id, d) { setCount(id, countOf(id) + d); save(); applyChange([id]); }
 function toggleShiny(id) {
   if (shinyOf(id)) delete STATE.shiny[id]; else STATE.shiny[id] = 1;
-  if (STATE.shiny[id] && countOf(id) === 0) STATE.counts[id] = 1; // glänzend ⇒ besitzt Karte
+  if (STATE.shiny[id] && countOf(id) === 0) STATE.counts[id] = 1;
   save(); applyChange([id]);
 }
 function toggleTeam(code) {
@@ -369,11 +310,115 @@ function toggleTeam(code) {
   const allOwned = cs.every((c) => countOf(c.id) > 0);
   for (const c of cs) setCount(c.id, allOwned ? 0 : Math.max(1, countOf(c.id)));
   save();
-  if (ui.view === "all") { cs.forEach((c) => refreshCard(c.id)); refreshSectionHeader(code); const s = refreshStats();
-    const completeNow = new Set(SECTIONS.filter((x) => x.kind === "team" && sectionStats(x.code).complete).map((x) => x.code));
-    for (const cc of completeNow) if (!prevComplete.has(cc)) { burstConfetti(); break; } prevComplete = completeNow;
-  } else render();
-  toast(allOwned ? "Team geleert" : "Team komplett abgehakt");
+  applyChange(cs.map((c) => c.id));
+  toast(allOwned ? "Nation geleert" : "Nation komplett abgehakt");
+}
+
+/* Klick-Delegation für Karten-Zeilen (beide Tabs) */
+function onRowAreaClick(e) {
+  const act = e.target.closest("[data-act]");
+  if (act) {
+    const a = act.dataset.act;
+    if (a === "acc") {
+      const code = act.dataset.code;
+      if (addUi.open.has(code)) addUi.open.delete(code); else addUi.open.add(code);
+      renderAddTab(); return;
+    }
+    if (a === "nation-all") { toggleTeam(act.dataset.code); return; }
+    const row = act.closest(".row"); if (!row) return;
+    const id = row.dataset.id;
+    if (a === "plus") changeCount(id, +1);
+    else if (a === "minus") changeCount(id, -1);
+    else if (a === "shiny") toggleShiny(id);
+    else if (a === "edit") openEdit(cardById[id]);
+    return;
+  }
+  const row = e.target.closest(".row");
+  if (row) toggleOwned(row.dataset.id);
+}
+
+/* ======================================================================
+ * Übersicht-Tab (flache Liste)
+ * ====================================================================== */
+const ui = { search: "", nation: "ALL" };
+
+function passesOverview(c) {
+  if (ui.nation !== "ALL" && c.sectionCode !== ui.nation) return false;
+  return matchesSearch(c, ui.search.trim());
+}
+function sortGlobal(arr) {
+  return arr.slice().sort((a, b) => {
+    const ga = ALL_GROUPS.indexOf(a.group), gb = ALL_GROUPS.indexOf(b.group);
+    if (ga !== gb) return ga - gb;
+    if (a.sectionName !== b.sectionName) return a.sectionName.localeCompare(b.sectionName, "de");
+    return a.num - b.num;
+  });
+}
+function renderOverview() {
+  refreshStats();
+  const visible = sortGlobal(CARDS.filter(passesOverview));
+  el("resultInfo").innerHTML = `<b>${visible.length}</b> Karten`;
+  el("overviewList").innerHTML = visible.length
+    ? visible.map(rowHtml).join("")
+    : emptyHtml("Keine Karten – Suche oder Nation anpassen.");
+}
+
+/* ======================================================================
+ * Hinzufügen-Tab (Nationen als Akkordeons + Filter)
+ * ====================================================================== */
+const addUi = { search: "", nation: "ALL", onlyMissing: false, onlyDupes: false, onlySpecial: false, open: new Set() };
+
+function addFiltersActive() {
+  return !!addUi.search.trim() || addUi.nation !== "ALL" || addUi.onlyMissing || addUi.onlyDupes || addUi.onlySpecial;
+}
+function addPasses(c) {
+  if (addUi.nation !== "ALL" && c.sectionCode !== addUi.nation) return false;
+  if (addUi.onlyMissing && countOf(c.id) > 0) return false;
+  if (addUi.onlyDupes && countOf(c.id) < 2) return false;
+  if (addUi.onlySpecial && !isSpecial(c)) return false;
+  if (addUi.search.trim()) return matchesSearch(c, addUi.search.trim());
+  return true;
+}
+function updateAddFilterBadge() {
+  let n = 0;
+  if (addUi.nation !== "ALL") n++;
+  if (addUi.onlyMissing) n++;
+  if (addUi.onlyDupes) n++;
+  if (addUi.onlySpecial) n++;
+  const b = el("addFilterBadge");
+  b.textContent = n ? String(n) : ""; b.hidden = !n;
+}
+function renderAddTab() {
+  updateAddFilterBadge();
+  const active = addFiltersActive();
+  const codes = SECTIONS.map((s) => s.code).sort(byGroupThenName);
+
+  let html = "";
+  for (const code of codes) {
+    const s = sectionByCode[code];
+    const visible = CARDS.filter((c) => c.sectionCode === code && addPasses(c)).sort((a, b) => a.num - b.num);
+    if (active && !visible.length) continue;       // beim Filtern leere Nationen ausblenden
+    const ss = sectionStats(code);
+    const open = active || addUi.open.has(code);
+    const sub = s.kind === "team" ? "Gruppe " + s.group : s.conf;
+
+    html += `<section class="acc${ss.complete ? " complete" : ""}${open ? " open" : ""}" data-section="${code}">
+      <div class="acc-head" data-act="acc" data-code="${code}">
+        <span class="acc-flag">${s.flag}</span>
+        <span class="acc-info">
+          <span class="acc-name">${escapeHtml(s.name)}${ss.complete ? ' <span class="check">✓</span>' : ""}</span>
+          <span class="acc-sub">${sub}</span>
+        </span>
+        <span class="acc-prog"><b>${ss.owned}</b>/${ss.total}</span>
+        <button class="btn-check" data-act="nation-all" data-code="${code}" title="Ganze Nation abhaken / leeren">${ss.complete ? "Leeren" : "Alle ✓"}</button>
+        <span class="acc-chev">▾</span>
+      </div>
+      ${open ? `<div class="acc-body">${visible.length
+        ? visible.map(rowHtml).join("")
+        : `<p class="muted small acc-empty">Keine passenden Karten</p>`}</div>` : ""}
+    </section>`;
+  }
+  el("addSections").innerHTML = html || emptyHtml("Keine Karten – Filter anpassen.");
 }
 
 /* ======================================================================
@@ -390,32 +435,23 @@ function openEdit(c) {
   openModal(`Karte ${c.label}`, `
     <div class="field"><label>Name / Bezeichnung</label>
       <input id="m_name" type="text" value="${escapeAttr(nameOf(c))}" placeholder="z. B. Felix Nmecha (MF)" /></div>`,
-    () => { STATE.names[c.id] = el("m_name").value.trim(); save(); refreshCard(c.id); toast("Gespeichert"); });
+    () => { STATE.names[c.id] = el("m_name").value.trim(); save(); refreshRow(c.id); toast("Gespeichert"); });
 }
 
 /* ======================================================================
- * Übersicht kopieren (Such-/Tauschliste)
+ * Liste kopieren (Übersicht-Auswahl)
  * ====================================================================== */
 function copyList() {
-  const visible = CARDS.filter(passesFilter);
+  const visible = sortGlobal(CARDS.filter(passesOverview));
   if (!visible.length) { toast("Liste ist leer"); return; }
-  const title = { owned: "Habe ich", missing: "Fehlen mir", dupes: "Doppelte", all: "Karten" }[ui.view];
-  const lines = sortCardsGlobal(visible).map((c) => {
+  const lines = visible.map((c) => {
     const n = countOf(c.id);
-    const extra = ui.view === "dupes" && n >= 2 ? ` (${n - 1}× doppelt)` : (n > 1 ? ` (${n}×)` : "");
+    const extra = n > 1 ? ` (${n}×)` : "";
     return `${c.label}${nameOf(c) ? " – " + nameOf(c) : ""}${extra}`;
   });
-  const text = `Panini WM 2026 · ${title} (${lines.length}):\n` + lines.join("\n");
+  const scope = ui.nation === "ALL" ? "Alle" : sectionByCode[ui.nation].name;
+  const text = `Panini WM 2026 · ${scope} (${lines.length}):\n` + lines.join("\n");
   navigator.clipboard?.writeText(text).then(() => toast(`${lines.length} Karten kopiert`), () => fallbackCopy(text));
-}
-function sortCardsGlobal(arr) {
-  const ALL_GROUPS = ["Spezial", ...GROUP_ORDER, "Extra", "Coca-Cola"];
-  return arr.slice().sort((a, b) => {
-    const ga = ALL_GROUPS.indexOf(a.group), gb = ALL_GROUPS.indexOf(b.group);
-    if (ga !== gb) return ga - gb;
-    if (a.sectionName !== b.sectionName) return a.sectionName.localeCompare(b.sectionName, "de");
-    return a.num - b.num;
-  });
 }
 function fallbackCopy(text) {
   const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta);
@@ -441,7 +477,7 @@ function importData() {
       STATE = Object.assign({ counts: {}, shiny: {}, names: {}, collapsed: {}, partner: null, tradeWanted: {} }, JSON.parse(r.result));
       STATE.partner = STATE.partner || null;
       STATE.tradeWanted = STATE.tradeWanted || {};
-      save(); render(); toast("Sammlung importiert");
+      save(); renderOverview(); toast("Sammlung importiert");
     } catch (e) { toast("Datei konnte nicht gelesen werden"); } };
     r.readAsText(f);
   };
@@ -450,17 +486,12 @@ function importData() {
 function resetAll() {
   if (!confirm("Wirklich alles zurücksetzen (Karten, Anzahl, Glanz, Namen)?")) return;
   STATE = { counts: {}, shiny: {}, names: {}, collapsed: {}, partner: null, tradeWanted: {} }; prevComplete = new Set();
-  save(); render(); toast("Zurückgesetzt");
+  save(); renderOverview(); toast("Zurückgesetzt");
 }
 
 /* ======================================================================
- * Hilfen
+ * Konfetti
  * ====================================================================== */
-function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
-function escapeAttr(s) { return escapeHtml(s); }
-let toastTimer;
-function toast(msg) { const t = el("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), 1900); }
-
 function burstConfetti() {
   const cv = el("confetti"), ctx = cv.getContext("2d");
   cv.width = innerWidth; cv.height = innerHeight;
@@ -478,211 +509,24 @@ function burstConfetti() {
 }
 
 /* ======================================================================
- * Setup (Übersicht)
- * ====================================================================== */
-function renderChips() {
-  const box = el("confChips");
-  const counts = {};
-  for (const c of CARDS) { const k = c.group; (counts[k] ||= [0, 0]); counts[k][1]++; if (countOf(c.id) > 0) counts[k][0]++; }
-  const allOwned = CARDS.filter((c) => countOf(c.id) > 0).length;
-  const mk = (val, label, owned, total) => `<button class="chip ${ui.conf === val ? "active" : ""}" data-conf="${val}">${label} <span class="c-count">${owned}/${total}</span></button>`;
-  if (!box.childElementCount) {
-    let html = mk("ALL", "Alle", allOwned, CARDS.length);
-    html += mk("Spezial", "Spezial", (counts["Spezial"] || [0, 0])[0], (counts["Spezial"] || [0, 0])[1]);
-    for (const g of GROUP_ORDER) html += mk(g, "Gr. " + g, (counts[g] || [0, 0])[0], (counts[g] || [0, 0])[1]);
-    html += mk("Extra", "Extra ✨", (counts["Extra"] || [0, 0])[0], (counts["Extra"] || [0, 0])[1]);
-    html += mk("Coca-Cola", "Coca-Cola", (counts["Coca-Cola"] || [0, 0])[0], (counts["Coca-Cola"] || [0, 0])[1]);
-    box.innerHTML = html;
-    box.onclick = (e) => { const b = e.target.closest(".chip"); if (!b) return; ui.conf = b.dataset.conf; ui.team = "ALL"; render(); };
-  } else {
-    box.querySelectorAll(".chip").forEach((b) => {
-      const v = b.dataset.conf; b.classList.toggle("active", v === ui.conf);
-      const cc = b.querySelector(".c-count");
-      if (v === "ALL") cc.textContent = `${allOwned}/${CARDS.length}`;
-      else cc.textContent = `${(counts[v] || [0, 0])[0]}/${(counts[v] || [0, 0])[1]}`;
-    });
-  }
-}
-
-function onSectionsClick(e) {
-  const act = e.target.closest("[data-act]");
-  if (act) {
-    const a = act.dataset.act;
-    if (a === "collapse") { const code = act.dataset.team; STATE.collapsed[code] = !STATE.collapsed[code]; save();
-      el("sections").querySelector(`section[data-section="${CSS.escape(code)}"]`).classList.toggle("collapsed"); return; }
-    if (a === "team-all") { toggleTeam(act.dataset.team); return; }
-    const card = act.closest(".sticker"); if (!card) return;
-    const id = card.dataset.id;
-    if (a === "plus") changeCount(id, +1);
-    else if (a === "minus") changeCount(id, -1);
-    else if (a === "shiny") toggleShiny(id);
-    else if (a === "edit") openEdit(cardById[id]);
-    return;
-  }
-  const card = e.target.closest(".sticker");
-  if (card) toggleOwned(card.dataset.id);
-}
-
-/* ======================================================================
  * Tab-Navigation
  * ====================================================================== */
 function switchTab(tab) {
-  document.querySelectorAll(".tab-pane").forEach(p => { p.hidden = true; });
-  document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
+  CURRENT_TAB = tab;
+  document.querySelectorAll(".tab-pane").forEach((p) => { p.hidden = true; });
+  document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
   el("pane-" + tab).hidden = false;
+  el("hero").hidden = (tab !== "overview");   // Statistiken nur in der Übersicht
   window.scrollTo(0, 0);
-  if (tab === "add") renderAddTab();
-  if (tab === "trade") renderTradeTab();
+  if (tab === "overview") renderOverview();
+  else if (tab === "add") renderAddTab();
+  else if (tab === "trade") renderTradeTab();
 }
 
 /* ======================================================================
- * Add Tab
+ * Tauschen-Tab
  * ====================================================================== */
-const addUi = { search: "", group: "ALL", selected: new Set() };
-
-function initAddTab() {
-  // Search
-  el("addSearchInput").addEventListener("input", (e) => {
-    addUi.search = e.target.value;
-    el("addSearchClear").hidden = !e.target.value;
-    renderAddTab();
-  });
-  el("addSearchClear").onclick = () => {
-    el("addSearchInput").value = ""; addUi.search = ""; el("addSearchClear").hidden = true; renderAddTab();
-  };
-
-  // Group chips
-  const box = el("addChips");
-  const groups = ["ALL", "Spezial", ...GROUP_ORDER, "Extra", "Coca-Cola"];
-  const labels = { ALL: "Alle", Spezial: "Spezial", Extra: "Extra ✨", "Coca-Cola": "Coca-Cola" };
-  let html = "";
-  for (const g of groups) {
-    const lbl = labels[g] || ("Gr. " + g);
-    html += `<button class="chip ${addUi.group === g ? "active" : ""}" data-addgroup="${g}">${lbl}</button>`;
-  }
-  box.innerHTML = html;
-  box.onclick = (e) => {
-    const b = e.target.closest("[data-addgroup]"); if (!b) return;
-    addUi.group = b.dataset.addgroup;
-    box.querySelectorAll(".chip").forEach(c => c.classList.toggle("active", c.dataset.addgroup === addUi.group));
-    renderAddTab();
-  };
-
-  // Select all / mark buttons
-  el("addSelAllBtn").onclick = () => {
-    const visible = getAddVisible();
-    const allSel = visible.every(c => addUi.selected.has(c.id));
-    if (allSel) { visible.forEach(c => addUi.selected.delete(c.id)); }
-    else { visible.forEach(c => addUi.selected.add(c.id)); }
-    renderAddTab();
-  };
-
-  el("addMarkBtn").onclick = () => {
-    let count = 0;
-    for (const id of addUi.selected) {
-      if (countOf(id) === 0) { setCount(id, 1); count++; }
-    }
-    addUi.selected.clear();
-    save(); refreshStats(); renderAddTab();
-    toast(count > 0 ? `${count} Karten als vorhanden markiert` : "Keine neuen Karten markiert");
-  };
-
-  // Card list clicks (delegation)
-  el("addSections").addEventListener("click", (e) => {
-    // Section "Alle" button
-    const secAllBtn = e.target.closest("[data-sec-all]");
-    if (secAllBtn) {
-      const code = secAllBtn.dataset.secAll;
-      const secCards = getAddVisible().filter(c => c.sectionCode === code);
-      const allSel = secCards.every(c => addUi.selected.has(c.id));
-      if (allSel) secCards.forEach(c => addUi.selected.delete(c.id));
-      else secCards.forEach(c => addUi.selected.add(c.id));
-      renderAddTab(); return;
-    }
-    // Card row click (toggle selection)
-    const row = e.target.closest(".add-card");
-    if (row) {
-      const id = row.dataset.id;
-      if (addUi.selected.has(id)) addUi.selected.delete(id); else addUi.selected.add(id);
-      renderAddTab();
-    }
-  });
-}
-
-function getAddVisible() {
-  const q = addUi.search.trim();
-  return CARDS.filter(c => {
-    if (addUi.group !== "ALL" && c.group !== addUi.group) return false;
-    if (q) return matchesSearch(c, q);
-    return true;
-  });
-}
-
-function renderAddTab() {
-  const visible = getAddVisible();
-
-  // Update selection count & button state
-  const selCount = addUi.selected.size;
-  el("addSelCount").textContent = selCount === 0 ? "0 ausgewählt" : `${selCount} ausgewählt`;
-  el("addMarkBtn").disabled = selCount === 0;
-
-  // Group by section, sorted by WM-group then name
-  const ALL_GROUPS = ["Spezial", ...GROUP_ORDER, "Extra", "Coca-Cola"];
-  const bySec = {};
-  for (const c of visible) (bySec[c.sectionCode] ||= []).push(c);
-  const codes = Object.keys(bySec).sort((a, b) => {
-    const ga = ALL_GROUPS.indexOf(sectionByCode[a].group);
-    const gb = ALL_GROUPS.indexOf(sectionByCode[b].group);
-    if (ga !== gb) return ga - gb;
-    return sectionByCode[a].name.localeCompare(sectionByCode[b].name, "de");
-  });
-
-  let html = "";
-  for (const code of codes) {
-    const s = sectionByCode[code];
-    const cards = bySec[code].slice().sort((a, b) => a.num - b.num);
-    const secCards = cards;
-    const allSecSel = secCards.every(c => addUi.selected.has(c.id));
-    const subLabel = s.kind === "team" ? "Gruppe " + s.group : s.conf;
-
-    html += `<div class="add-section">
-      <div class="add-sec-head">
-        <span style="font-size:22px">${s.flag}</span>
-        <div class="add-sec-info">
-          <span class="add-sec-name">${escapeHtml(s.name)}</span>
-          <span class="add-sec-sub">${subLabel}</span>
-        </div>
-        <button class="btn" data-sec-all="${code}">${allSecSel ? "Alle ab" : "Alle ✓"}</button>
-      </div>
-      <div class="add-card-list">`;
-
-    for (const c of cards) {
-      const n = countOf(c.id);
-      const owned = n > 0;
-      const sel = addUi.selected.has(c.id);
-      const displayName = nameOf(c) || c.role;
-      const countLabel = n === 0 ? "0×" : (n === 1 ? "1×" : `${n}×`);
-      html += `<div class="add-card${owned ? " owned" : ""}${sel ? " sel" : ""}" data-id="${c.id}">
-        <input type="checkbox" class="add-cb" ${sel ? "checked" : ""} tabindex="-1" onclick="return false" />
-        <span class="add-card-num">${escapeHtml(c.label)}</span>
-        <span class="add-card-name">${escapeHtml(displayName)}</span>
-        <span class="add-card-count${n >= 2 ? " multi" : ""}">${countLabel}</span>
-      </div>`;
-    }
-
-    html += `</div></div>`;
-  }
-
-  if (!html) html = `<div class="empty"><div class="big">🔍</div><p>Keine Karten gefunden.</p></div>`;
-  el("addSections").innerHTML = html;
-}
-
-/* ======================================================================
- * Trade Tab
- * ====================================================================== */
-function partnerCountOf(id) {
-  return STATE.partner ? (STATE.partner.counts[id] || 0) : 0;
-}
+function partnerCountOf(id) { return STATE.partner ? (STATE.partner.counts[id] || 0) : 0; }
 
 function initTradeTab() {
   el("tradeImportBtn").onclick = () => {
@@ -701,34 +545,26 @@ function initTradeTab() {
     };
     inp.click();
   };
-
   el("tradeClearBtn").onclick = () => {
     STATE.partner = null; STATE.tradeWanted = {};
     save(); renderTradeTab(); toast("Partner entfernt");
   };
-
   el("tradeGiveAllBtn").onclick = () => {
-    const giveCards = CARDS.filter(c => countOf(c.id) >= 2 && partnerCountOf(c.id) === 0);
-    for (const c of giveCards) { setCount(c.id, countOf(c.id) - 1); }
+    const giveCards = CARDS.filter((c) => countOf(c.id) >= 2 && partnerCountOf(c.id) === 0);
+    for (const c of giveCards) setCount(c.id, countOf(c.id) - 1);
     save(); renderTradeTab(); refreshStats(); toast(`${giveCards.length} Karten zugeteilt`);
   };
-
   el("tradeGetAllBtn").onclick = () => {
-    const getCards = CARDS.filter(c => partnerCountOf(c.id) >= 2 && countOf(c.id) === 0);
-    for (const c of getCards) { STATE.tradeWanted[c.id] = true; }
+    const getCards = CARDS.filter((c) => partnerCountOf(c.id) >= 2 && countOf(c.id) === 0);
+    for (const c of getCards) STATE.tradeWanted[c.id] = true;
     save(); renderTradeTab(); toast(`${getCards.length} Karten angefordert`);
   };
-
   el("tradeConfirmBtn").onclick = () => {
     let count = 0;
-    for (const id in STATE.tradeWanted) {
-      if (countOf(id) === 0) { setCount(id, 1); count++; }
-    }
+    for (const id in STATE.tradeWanted) if (countOf(id) === 0) { setCount(id, 1); count++; }
     STATE.tradeWanted = {};
     save(); refreshStats(); renderTradeTab(); toast(`${count} Karten als erhalten markiert`);
   };
-
-  // Delegated clicks on trade lists
   el("tradeContent").addEventListener("click", (e) => {
     const btn = e.target.closest("[data-act][data-id]"); if (!btn) return;
     const act = btn.dataset.act, id = btn.dataset.id;
@@ -737,25 +573,21 @@ function initTradeTab() {
     else if (act === "unwant") { delete STATE.tradeWanted[id]; save(); renderTradeTab(); }
   });
 }
-
 function renderTradeTab() {
   const hasPartner = !!STATE.partner;
   el("tradeContent").hidden = !hasPartner;
   el("tradeClearBtn").hidden = !hasPartner;
-
-  if (hasPartner) {
-    el("tradePartnerName").value = STATE.partner.name;
-    el("tradePartnerStatus").textContent = `Partner: ${STATE.partner.name}`;
-    // Update partner name references
-    document.querySelectorAll(".partner-name-ref").forEach(s => s.textContent = STATE.partner.name);
-  } else {
+  if (!hasPartner) {
     el("tradePartnerStatus").textContent = "Noch kein Partner. JSON-Export der anderen Person importieren.";
     return;
   }
+  el("tradePartnerName").value = STATE.partner.name;
+  el("tradePartnerStatus").textContent = `Partner: ${STATE.partner.name}`;
+  document.querySelectorAll(".partner-name-ref").forEach((s) => s.textContent = STATE.partner.name);
 
-  const giveCards = CARDS.filter(c => countOf(c.id) >= 2 && partnerCountOf(c.id) === 0);
-  const getCards = CARDS.filter(c => partnerCountOf(c.id) >= 2 && countOf(c.id) === 0);
-  const offerCards = CARDS.filter(c => countOf(c.id) >= 2 && partnerCountOf(c.id) > 0);
+  const giveCards = CARDS.filter((c) => countOf(c.id) >= 2 && partnerCountOf(c.id) === 0);
+  const getCards = CARDS.filter((c) => partnerCountOf(c.id) >= 2 && countOf(c.id) === 0);
+  const offerCards = CARDS.filter((c) => countOf(c.id) >= 2 && partnerCountOf(c.id) > 0);
   const wantedIds = Object.keys(STATE.tradeWanted);
 
   el("tradeGiveCount").textContent = giveCards.length;
@@ -767,12 +599,11 @@ function renderTradeTab() {
   el("tradeGiveList").innerHTML = renderTradeRows(giveCards, "give");
   el("tradeGetList").innerHTML = renderTradeRows(getCards, "want");
   el("tradeOfferList").innerHTML = renderTradeRows(offerCards, null);
-  el("tradeWantedList").innerHTML = renderTradeRows(wantedIds.map(id => cardById[id]).filter(Boolean), "unwant");
+  el("tradeWantedList").innerHTML = renderTradeRows(wantedIds.map((id) => cardById[id]).filter(Boolean), "unwant");
 }
-
 function renderTradeRows(cards, action) {
   if (!cards.length) return `<p class="muted small" style="padding:8px 0">Keine Karten</p>`;
-  return cards.map(c => {
+  return cards.map((c) => {
     const n = countOf(c.id);
     const ctLabel = n >= 2 ? `${n}×` : (n === 1 ? "1×" : "0×");
     let btnHtml = "";
@@ -803,7 +634,6 @@ function registerSW() {
         });
       }).catch(() => {});
     });
-    // Reload when a new SW takes over (handles already-waiting SW case)
     navigator.serviceWorker.addEventListener("controllerchange", () => window.location.reload());
   }
   let deferred = null;
@@ -819,47 +649,59 @@ function registerSW() {
  * Init
  * ====================================================================== */
 function init() {
-  // Guard: if key elements are missing the HTML is an old cached version — force reload
-  if (!el("addSearchInput") || !el("tradeImportBtn")) {
-    caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k)))).finally(() => location.reload());
+  // Guard: alte gecachte HTML-Version -> Cache leeren & neu laden
+  if (!el("nationSelect") || !el("addFilterBtn") || !el("tradeImportBtn")) {
+    caches.keys().then((keys) => Promise.all(keys.map((k) => caches.delete(k)))).finally(() => location.reload());
     return;
   }
   load();
 
-  el("searchInput").addEventListener("input", (e) => { ui.search = e.target.value; el("searchClear").hidden = !e.target.value; render(); });
-  el("searchClear").onclick = () => { el("searchInput").value = ""; ui.search = ""; el("searchClear").hidden = true; render(); el("searchInput").focus(); };
-  el("sortSelect").onchange = (e) => { ui.sort = e.target.value; render(); };
+  // Nationen-Dropdowns füllen
+  el("nationSelect").innerHTML = buildNationOptions();
+  el("addNationSelect").innerHTML = buildNationOptions();
 
-  document.querySelectorAll("#viewSeg .seg-btn").forEach((b) => {
-    b.onclick = () => { ui.view = b.dataset.view; document.querySelectorAll("#viewSeg .seg-btn").forEach((x) => x.classList.toggle("active", x === b)); render(); };
-  });
-
-  el("sections").addEventListener("click", onSectionsClick);
-  el("btnExpand").onclick = () => { STATE.collapsed = {}; save(); render(); };
-  el("btnCollapse").onclick = () => { SECTIONS.forEach((s) => (STATE.collapsed[s.code] = true)); save(); render(); };
+  /* ---- Übersicht ---- */
+  el("searchInput").addEventListener("input", (e) => { ui.search = e.target.value; el("searchClear").hidden = !e.target.value; renderOverview(); });
+  el("searchClear").onclick = () => { el("searchInput").value = ""; ui.search = ""; el("searchClear").hidden = true; renderOverview(); el("searchInput").focus(); };
+  el("nationSelect").onchange = (e) => { ui.nation = e.target.value; renderOverview(); };
+  el("overviewList").addEventListener("click", onRowAreaClick);
   el("btnCopyList").onclick = copyList;
-
   el("btnExport").onclick = exportData;
   el("btnImport").onclick = importData;
   el("btnReset").onclick = resetAll;
 
+  /* ---- Hinzufügen ---- */
+  el("addSearchInput").addEventListener("input", (e) => { addUi.search = e.target.value; el("addSearchClear").hidden = !e.target.value; renderAddTab(); });
+  el("addSearchClear").onclick = () => { el("addSearchInput").value = ""; addUi.search = ""; el("addSearchClear").hidden = true; renderAddTab(); };
+  el("addFilterBtn").onclick = () => { const p = el("addFilterPanel"); p.hidden = !p.hidden; el("addFilterBtn").classList.toggle("active", !p.hidden); };
+  el("addNationSelect").onchange = (e) => { addUi.nation = e.target.value; renderAddTab(); };
+  el("fltMissing").onchange = (e) => { addUi.onlyMissing = e.target.checked; renderAddTab(); };
+  el("fltDupes").onchange = (e) => { addUi.onlyDupes = e.target.checked; renderAddTab(); };
+  el("fltSpecial").onchange = (e) => { addUi.onlySpecial = e.target.checked; renderAddTab(); };
+  el("addFilterReset").onclick = () => {
+    addUi.nation = "ALL"; addUi.onlyMissing = addUi.onlyDupes = addUi.onlySpecial = false;
+    el("addNationSelect").value = "ALL"; el("fltMissing").checked = el("fltDupes").checked = el("fltSpecial").checked = false;
+    renderAddTab();
+  };
+  el("addSections").addEventListener("click", onRowAreaClick);
+
+  /* ---- Modal ---- */
   el("modalCancel").onclick = closeModal;
   el("modalSave").onclick = () => { if (modalSave && modalSave() !== false) closeModal(); };
   el("modal").addEventListener("click", (e) => { if (e.target === el("modal")) closeModal(); });
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && !el("modal").hidden) closeModal();
     if (e.key === "Enter" && !el("modal").hidden && e.target.tagName === "INPUT") el("modalSave").click();
-    if (e.key === "/" && document.activeElement.tagName !== "INPUT") { e.preventDefault(); el("searchInput").focus(); }
+    if (e.key === "/" && CURRENT_TAB === "overview" && document.activeElement.tagName !== "INPUT") { e.preventDefault(); el("searchInput").focus(); }
   });
 
-  // Tab navigation
-  document.querySelectorAll(".tab-btn").forEach(b => b.onclick = () => switchTab(b.dataset.tab));
+  /* ---- Tabs ---- */
+  document.querySelectorAll(".tab-btn").forEach((b) => b.onclick = () => switchTab(b.dataset.tab));
 
-  initAddTab();
   initTradeTab();
-
   registerSW();
-  render();
+
+  renderOverview();
 }
 
 document.addEventListener("DOMContentLoaded", init);
