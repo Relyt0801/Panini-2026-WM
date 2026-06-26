@@ -25,6 +25,16 @@ Mengen, doppelte & fehlende Karten im Blick.
   wie eine native App, **offline** dank Service Worker.
 - **Import / Export** (JSON) als Backup, **Zurücksetzen**. Speicherung lokal
   (`localStorage`) – kein Server, kein Login.
+- **Tauschen** mit zwei parallelen Wegen:
+  - **Per Tausch-Code / Datei** (offline): Stand des Partners als Code/Datei
+    einlesen, Karten zum Geben/Erhalten auswählen (gefiltert, nach Nation &
+    Nummer sortiert), bestätigen → **eigener Stand wird sofort aktualisiert** und
+    eine Tausch-Datei für den Partner erzeugt, die er nur noch einliest.
+  - **Tauschgruppe (live)** über einen kleinen Render-Server: einer Gruppe
+    beitreten (bleibt bestehen), tauschbare Karten der Mitglieder einsehen,
+    **Anfragen** senden (bleiben in der App gespeichert), Gegenangebote,
+    löschen, und am Ende beidseitig die Liste „Ich gebe / Du erhältst“
+    bestätigen. Server-Code & Anleitung: Ordner [`server/`](server/).
 
 ## Installieren
 
@@ -65,7 +75,9 @@ DFB-Kader ist real vorbefüllt; übrige Spielernamen sind **editierbare Vorschau
 | `index.html` | Aufbau der Seite |
 | `styles.css` | Design |
 | `app.js` | Logik (Abhaken, Filter, Suche, PWA) |
+| `trade.js` | Tauschen (Code/Datei offline + Live-Tauschgruppe) |
 | `data.js` | Teams, FWC-, Extra- & DFB-Daten |
+| `server/` | Optionaler Render-Server für die Live-Tauschgruppe |
 | `manifest.webmanifest` | PWA-Manifest (Name, Icons, Standalone) |
 | `service-worker.js` | Offline-Cache (App-Shell) |
 | `icons/` | App-Icons (192/512 + maskable) |

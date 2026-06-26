@@ -1,0 +1,13 @@
+{
+  "name": "panini-wm2026-tauschserver",
+  "version": "1.0.0",
+  "description": "Tauschgruppen-Server für den Panini WM 2026 Sticker-Tracker (abhängigkeitsfrei).",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}

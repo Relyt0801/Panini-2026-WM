@@ -1,0 +1,15 @@
+# Render-Blueprint für den Panini-Tauschserver.
+# In Render: "New +" → "Blueprint" → dieses Repo wählen.
+services:
+  - type: web
+    name: panini-tauschserver
+    runtime: node
+    rootDir: server
+    plan: free
+    buildCommand: ""        # keine Abhängigkeiten -> kein npm install nötig
+    startCommand: node index.js
+    healthCheckPath: /api
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "20"

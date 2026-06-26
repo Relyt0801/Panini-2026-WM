@@ -135,17 +135,7 @@
   <!-- ======================= TAUSCHEN ======================= -->
   <div id="pane-trade" class="tab-pane" hidden>
     <div class="wrap trade-wrap">
-      <div class="trade-skeleton">
-        <div class="skel-icon">⇄</div>
-        <h2 class="skel-title">Tauschen</h2>
-        <button class="btn btn-primary skel-import" id="tradeImportBtn">📥 Daten importieren</button>
-        <button class="btn btn-danger skel-clear" id="tradeClearBtn" hidden>Partner entfernen</button>
-        <ol class="skel-steps">
-          <li>Importiere den Sammelfortschritt eines Freundes.</li>
-          <li>Wähle Karten zum Tauschen aus – sie erscheinen in einer Dropdown-Liste (nach Team bzw. Nummer sortiert).</li>
-        </ol>
-        <p class="muted small skel-status" id="tradePartnerStatus"></p>
-      </div>
+      <div id="tradeRoot"></div>
     </div>
     <div class="tab-spacer"></div>
   </div><!-- /pane-trade -->
@@ -174,5 +164,6 @@
 
   <script src="data.js"></script>
   <script src="app.js"></script>
+  <script src="trade.js"></script>
 </body>
 </html>
