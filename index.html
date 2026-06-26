@@ -51,73 +51,166 @@
     </div>
   </header>
 
-  <!-- ======================= TOOLBAR ======================= -->
-  <div class="toolbar-sticky">
-    <div class="wrap">
-      <div class="controls">
-        <div class="search">
-          <span class="icon">🔎</span>
-          <input id="searchInput" type="search" placeholder="Suche „GER 12“, „Nmecha“, „Messi Gold“ …  (Taste /)" autocomplete="off" />
-          <button id="searchClear" class="search-clear" title="Leeren" hidden>✕</button>
+  <!-- ======================= TABS ======================= -->
+  <div id=”pane-overview” class=”tab-pane”>
+    <!-- ======================= TOOLBAR ======================= -->
+    <div class=”toolbar-sticky”>
+      <div class=”wrap”>
+        <div class=”controls”>
+          <div class=”search”>
+            <span class=”icon”>🔎</span>
+            <input id=”searchInput” type=”search” placeholder=”Suche „GER 12”, „Nmecha”, „Messi Gold” …  (Taste /)” autocomplete=”off” />
+            <button id=”searchClear” class=”search-clear” title=”Leeren” hidden>✕</button>
+          </div>
+          <select id=”sortSelect” aria-label=”Sortierung”>
+            <option value=”num”>Nach Nummer</option>
+            <option value=”name”>Nach Name (A–Z)</option>
+            <option value=”missing”>Fehlende zuerst</option>
+          </select>
         </div>
-        <select id="teamSelect" aria-label="Sektion filtern"></select>
-        <select id="sortSelect" aria-label="Sortierung">
-          <option value="num">Nach Nummer</option>
-          <option value="name">Nach Name (A–Z)</option>
-          <option value="missing">Fehlende zuerst</option>
-        </select>
-      </div>
-      <div class="seg" id="viewSeg" role="tablist">
-        <button class="seg-btn active" data-view="all">Alle</button>
-        <button class="seg-btn" data-view="owned">✓ Habe ich</button>
-        <button class="seg-btn" data-view="missing">Fehlen mir</button>
-        <button class="seg-btn" data-view="dupes">⇄ Doppelte</button>
-      </div>
-      <div class="chips" id="confChips"></div>
-    </div>
-  </div>
-
-  <!-- ======================= INHALT ======================= -->
-  <main class="wrap">
-    <div class="result-bar">
-      <span id="resultInfo" class="result-info"></span>
-      <div class="result-actions">
-        <button class="link-btn" id="btnCopyList">📋 Liste kopieren</button>
-        <span class="dot">·</span>
-        <button class="link-btn" id="btnExpand">Aufklappen</button>
-        <span class="dot">·</span>
-        <button class="link-btn" id="btnCollapse">Zuklappen</button>
+        <div class=”seg” id=”viewSeg” role=”tablist”>
+          <button class=”seg-btn active” data-view=”all”>Alle</button>
+          <button class=”seg-btn” data-view=”owned”>✓ Habe ich</button>
+          <button class=”seg-btn” data-view=”missing”>Fehlen mir</button>
+          <button class=”seg-btn” data-view=”dupes”>⇄ Doppelte</button>
+        </div>
+        <div class=”chips” id=”confChips”></div>
       </div>
     </div>
 
-    <div id="sections"></div>
-
-    <section class="datacard">
-      <h3>ℹ️ So funktioniert's</h3>
-      <ul class="howto">
-        <li><b>Karte antippen</b> = „habe ich“. Mit <b>−/+</b> die Anzahl ändern (Doppelte).</li>
-        <li><b>Alle ✓</b> im Team-Kopf hakt ein ganzes Team auf einmal ab (nochmal = leeren).</li>
-        <li><b>✨</b> auf DFB-Karten markiert die <b>Glanz-Variante</b> (nur Deutschland).</li>
-        <li><b>Doppelte / Fehlen mir</b> oben umschalten und mit <b>📋 Liste kopieren</b> als Tauschliste teilen.</li>
-        <li>Suche nach Nummer (<code>GER 12</code>), Name (<code>Nmecha</code>) oder Extra (<code>Messi Gold</code>).</li>
-      </ul>
-      <p class="muted">
-        980 Basis-Sticker (FWC 00–19 + 48 Teams à 1–20) plus 20 Extra-Sticker in
-        4 Varianten. Spielernamen sind editierbare Vorschau (✎), bis Panini die
-        offizielle Liste bestätigt. Daten liegen lokal im Browser – ab und zu exportieren.
-      </p>
-      <div class="datacard-actions">
-        <button class="btn" id="btnExport">↓ Export</button>
-        <button class="btn" id="btnImport">↑ Import</button>
-        <button class="btn btn-danger" id="btnReset">Zurücksetzen</button>
+    <!-- ======================= INHALT ======================= -->
+    <main class=”wrap”>
+      <div class=”result-bar”>
+        <span id=”resultInfo” class=”result-info”></span>
+        <div class=”result-actions”>
+          <button class=”link-btn” id=”btnCopyList”>📋 Liste kopieren</button>
+          <span class=”dot”>·</span>
+          <button class=”link-btn” id=”btnExpand”>Aufklappen</button>
+          <span class=”dot”>·</span>
+          <button class=”link-btn” id=”btnCollapse”>Zuklappen</button>
+        </div>
       </div>
-    </section>
 
-    <footer class="foot">Inoffizielles Hilfstool für Sammler · keine Verbindung zu Panini oder der FIFA.</footer>
-  </main>
+      <div id=”sections”></div>
+
+      <section class=”datacard”>
+        <h3>ℹ️ So funktioniert's</h3>
+        <ul class=”howto”>
+          <li><b>Karte antippen</b> = „habe ich”. Mit <b>−/+</b> die Anzahl ändern (Doppelte).</li>
+          <li><b>Alle ✓</b> im Team-Kopf hakt ein ganzes Team auf einmal ab (nochmal = leeren).</li>
+          <li><b>✨</b> auf DFB-Karten markiert die <b>Glanz-Variante</b> (nur Deutschland).</li>
+          <li><b>Doppelte / Fehlen mir</b> oben umschalten und mit <b>📋 Liste kopieren</b> als Tauschliste teilen.</li>
+          <li>Suche nach Nummer (<code>GER 12</code>), Name (<code>Nmecha</code>) oder Extra (<code>Messi Gold</code>).</li>
+        </ul>
+        <p class=”muted”>
+          980 Basis-Sticker (FWC 00–19 + 48 Teams à 1–20) plus 20 Extra-Sticker in
+          4 Varianten. Spielernamen sind editierbare Vorschau (✎), bis Panini die
+          offizielle Liste bestätigt. Daten liegen lokal im Browser – ab und zu exportieren.
+        </p>
+        <div class=”datacard-actions”>
+          <button class=”btn” id=”btnExport”>↓ Export</button>
+          <button class=”btn” id=”btnImport”>↑ Import</button>
+          <button class=”btn btn-danger” id=”btnReset”>Zurücksetzen</button>
+        </div>
+      </section>
+
+      <footer class=”foot”>Inoffizielles Hilfstool für Sammler · keine Verbindung zu Panini oder der FIFA.</footer>
+    </main>
+    <div style=”height:72px”></div>
+  </div><!-- /pane-overview -->
+
+  <!-- ======================= ADD TAB ======================= -->
+  <div id=”pane-add” class=”tab-pane” hidden>
+    <div class=”toolbar-sticky”>
+      <div class=”wrap”>
+        <div class=”search”>
+          <span class=”icon”>🔎</span>
+          <input id=”addSearchInput” type=”search” placeholder=”Nation, Spieler, Nummer …” autocomplete=”off” />
+          <button id=”addSearchClear” class=”search-clear” hidden>✕</button>
+        </div>
+        <div class=”chips” id=”addChips”></div>
+      </div>
+    </div>
+    <div class=”wrap add-wrap”>
+      <div class=”add-action-bar”>
+        <span id=”addSelCount” class=”muted”>0 ausgewählt</span>
+        <button class=”btn” id=”addSelAllBtn”>Alle auswählen</button>
+        <button class=”btn btn-primary” id=”addMarkBtn” disabled>✓ Markieren</button>
+      </div>
+      <div id=”addSections”></div>
+    </div>
+  </div><!-- /pane-add -->
+
+  <!-- ======================= TRADE TAB ======================= -->
+  <div id=”pane-trade” class=”tab-pane” hidden>
+    <div class=”wrap trade-wrap”>
+      <!-- Partner Setup -->
+      <div class=”trade-setup-box”>
+        <div class=”trade-setup-row”>
+          <input id=”tradePartnerName” type=”text” placeholder=”Name des Partners” />
+          <button class=”btn” id=”tradeImportBtn”>📂 Sammlung laden</button>
+          <button class=”btn btn-danger” id=”tradeClearBtn” hidden>Entfernen</button>
+        </div>
+        <p class=”muted small” id=”tradePartnerStatus”>Noch kein Partner. JSON-Export der anderen Person importieren.</p>
+      </div>
+
+      <!-- Trade Content (hidden when no partner) -->
+      <div id=”tradeContent” hidden>
+        <!-- Ich gebe ab -->
+        <div class=”trade-block”>
+          <div class=”trade-block-head”>
+            <h4>🤝 Ich gebe ab</h4>
+            <span class=”trade-badge” id=”tradeGiveCount”>0</span>
+            <button class=”btn” id=”tradeGiveAllBtn”>Alle zuteilen</button>
+          </div>
+          <p class=”muted small”>Deine Doppelten, die <span class=”partner-name-ref”>Partner</span> noch braucht.</p>
+          <div id=”tradeGiveList” class=”trade-list”></div>
+        </div>
+
+        <!-- Ich bekomme -->
+        <div class=”trade-block”>
+          <div class=”trade-block-head”>
+            <h4>📥 Ich bekomme</h4>
+            <span class=”trade-badge” id=”tradeGetCount”>0</span>
+            <button class=”btn” id=”tradeGetAllBtn”>Alle anfordern</button>
+          </div>
+          <p class=”muted small”><span class=”partner-name-ref”>Partner</span>s Doppelte, die du noch brauchst.</p>
+          <div id=”tradeGetList” class=”trade-list”></div>
+        </div>
+
+        <!-- Sonstige abgeben -->
+        <div class=”trade-block”>
+          <div class=”trade-block-head”>
+            <h4>📋 Sonstige Doppelte anbieten</h4>
+            <span class=”trade-badge” id=”tradeOfferCount”>0</span>
+          </div>
+          <p class=”muted small”>Deine weiteren Doppelten (Partner hat sie schon).</p>
+          <div id=”tradeOfferList” class=”trade-list”></div>
+        </div>
+
+        <!-- Angefordert -->
+        <div class=”trade-block” id=”tradeWantedBlock” hidden>
+          <div class=”trade-block-head”>
+            <h4>⭐ Angefordert</h4>
+            <span class=”trade-badge” id=”tradeWantedCount”>0</span>
+            <button class=”btn btn-primary” id=”tradeConfirmBtn”>✓ Als erhalten markieren</button>
+          </div>
+          <p class=”muted small”>Karten, die du vom Partner angefordert hast.</p>
+          <div id=”tradeWantedList” class=”trade-list”></div>
+        </div>
+      </div>
+    </div>
+  </div><!-- /pane-trade -->
+
+  <!-- ======================= BOTTOM NAV ======================= -->
+  <nav class=”tab-nav”>
+    <button class=”tab-btn active” data-tab=”overview”><span class=”tab-icon”>📋</span><span class=”tab-label”>Übersicht</span></button>
+    <button class=”tab-btn” data-tab=”add”><span class=”tab-icon”>➕</span><span class=”tab-label”>Hinzufügen</span></button>
+    <button class=”tab-btn” data-tab=”trade”><span class=”tab-icon”>⇄</span><span class=”tab-label”>Tauschen</span></button>
+  </nav>
 
   <!-- ======================= MODAL ======================= -->
-  <div class="modal-backdrop" id="modal" hidden>
+  <div class=”modal-backdrop” id=”modal” hidden>
     <div class="modal" role="dialog" aria-modal="true">
       <h3 id="modalTitle">Karte bearbeiten</h3>
       <div id="modalBody"></div>
