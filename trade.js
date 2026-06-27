@@ -264,8 +264,7 @@ function buildRowsHtml(ids, dir, theirCounts) {
     return `<div class="trade-row${qty >= 1 ? " picked" : ""}" data-id="${id}">
       <span class="r-num">${escapeHtml(c.label)}</span>
       <span class="trade-name">${escapeHtml(name)}</span>
-      ${neu}
-      <span class="trade-avail">×${max}</span>
+      <span class="trade-meta">${neu}<span class="trade-avail">×${max}</span></span>
       <span class="r-cnt ${qty >= 1 ? "multi" : ""}">
         <button class="r-step" data-act="t-minus" data-dir="${dir}" aria-label="weniger">−</button>
         <span class="r-val">${qty}</span>
@@ -362,7 +361,7 @@ function viewOffDone() {
   const recvList = tradeSort(Object.keys(f.receive));
   const giveList = tradeSort(Object.keys(f.give));
   const li = (ids, map) => ids.length
-    ? ids.map((id) => `<li>${escapeHtml(cardById[id].label)} · ${escapeHtml((STATE.names[id] ?? cardById[id].name) || "")} <b>×${map[id]}</b></li>`).join("")
+    ? ids.map((id) => `<li><span class="ml-card">${escapeHtml(cardById[id].label)} · ${escapeHtml((STATE.names[id] ?? cardById[id].name) || "")}</span><span class="ml-meta"><b>×${map[id]}</b></span></li>`).join("")
     : `<li class="muted">—</li>`;
   return `
     <div class="trade-done-head">✓ Dein Speicherstand wurde aktualisiert</div>
@@ -395,7 +394,7 @@ function viewOffApply() {
   const recvList = tradeSort(Object.keys(recv));
   const giveList = tradeSort(Object.keys(give));
   const li = (ids, map) => ids.length
-    ? ids.map((id) => `<li>${escapeHtml(cardById[id].label)} · ${escapeHtml((STATE.names[id] ?? cardById[id].name) || "")} <b>×${map[id]}</b></li>`).join("")
+    ? ids.map((id) => `<li><span class="ml-card">${escapeHtml(cardById[id].label)} · ${escapeHtml((STATE.names[id] ?? cardById[id].name) || "")}</span><span class="ml-meta"><b>×${map[id]}</b></span></li>`).join("")
     : `<li class="muted">—</li>`;
   // Sicherheits-Hinweis, falls ich Karten gebe, die ich gar nicht (doppelt) habe
   const missing = giveList.filter((id) => (STATE.counts[id] || 0) < give[id]);
@@ -462,8 +461,8 @@ function viewOnSetup() {
       derselben Lobby – jede Lobby ist getrennt. Die Mitgliedschaft bleibt bestehen, bis du sie verlässt.</p>
     <div class="field"><label>Dein Anzeigename</label>
       <input id="srvName" type="text" value="${escapeAttr(t.identity ? t.identity.name : "")}" placeholder="z. B. Tyler" /></div>
-    <div class="field"><label>Lobby-Code</label>
-      <input id="srvGroup" type="text" value="${escapeAttr(t.group ? t.group.code : "")}" placeholder="z. B. wm2026-freunde" /></div>
+    <div class="field"><label>Lobby-Code (mind. 5 Zeichen)</label>
+      <input id="srvGroup" type="text" minlength="5" value="${escapeAttr(t.group ? t.group.code : "")}" placeholder="z. B. wm2026-freunde" /></div>
     <div class="trade-actions">
       <button class="btn btn-primary" data-act="join-group">Lobby beitreten / erstellen</button>
     </div>
@@ -475,6 +474,7 @@ async function joinGroup() {
   const name = document.getElementById("srvName").value.trim();
   const code = document.getElementById("srvGroup").value.trim();
   if (!name || !code) { toast("Bitte Namen und Lobby-Code angeben"); return; }
+  if (code.length < 5) { toast("Lobby-Code muss mindestens 5 Zeichen haben"); return; }
   STATE.trade.serverUrl = TRADE_SERVER;
   const id = (STATE.trade.identity && STATE.trade.identity.id) || ("m_" + Math.random().toString(36).slice(2, 10));
   STATE.trade.identity = { id, name };
@@ -521,6 +521,10 @@ async function syncGroup() {
   TRADE.members = (res.members || []).filter((m) => m.id !== STATE.trade.identity.id);
   // Server-Anfragen mit lokal gespeicherten zusammenführen (lokale überleben Inaktivität)
   mergeRequests(res.requests || []);
+  // mein Teil schon ausgeführt + Angebot serverseitig weg (Gegenseite fertig) -> lokal aufräumen
+  const serverIds = new Set((res.requests || []).map((r) => r.id));
+  STATE.trade.requests = STATE.trade.requests.filter((r) => !(myExecuted(r) && !serverIds.has(r.id)));
+  save();
   autoExecutePending();   // beidseitig akzeptierte Tausche automatisch abschließen
   if (CURRENT_TAB === "trade" && (TRADE.view === "on-group" || TRADE.view === "on-live")) renderTradeTab();
 }
@@ -545,8 +549,8 @@ function mergeRequests(serverReqs) {
 function viewOnGroup() {
   const g = STATE.trade.group;
   const reqs = STATE.trade.requests;
-  const incoming = reqs.filter((r) => r.to === STATE.trade.identity.id && r.status !== "done");
-  const outgoing = reqs.filter((r) => r.from === STATE.trade.identity.id && r.status !== "done");
+  const incoming = reqs.filter((r) => r.to === STATE.trade.identity.id && r.status !== "done" && !myExecuted(r));
+  const outgoing = reqs.filter((r) => r.from === STATE.trade.identity.id && r.status !== "done" && !myExecuted(r));
   const memberRows = TRADE.members.length
     ? TRADE.members.map((m) => {
         const tradeable = countMutualTradeable(m);
@@ -786,6 +790,7 @@ async function acceptRequest(rid) {
 // Beidseitig akzeptierte Tausche automatisch ausführen (jede Seite ihren Teil, genau einmal)
 function autoExecutePending() {
   let did = false;
+  const finished = [];   // vollständig abgeschlossen -> für beide löschen
   for (const req of STATE.trade.requests) {
     if (req.status === "done" || !bothAccepted(req)) continue;
     const mine = req.from === STATE.trade.identity.id ? "from" : "to";
@@ -793,11 +798,16 @@ function autoExecutePending() {
     const iAmFrom = mine === "from";
     applyDeltaToSelf(iAmFrom ? req.give : req.receive, iAmFrom ? req.receive : req.give);
     req.executedBy = Object.assign({}, req.executedBy, { [mine]: true });
-    if (req.executedBy.from && req.executedBy.to) req.status = "done";
+    if (req.executedBy.from && req.executedBy.to) { req.status = "done"; finished.push(req.id); }
     upsertLocalReq(req);
     api(`/api/request/${encodeURIComponent(req.id)}/done`, { method: "POST", body: JSON.stringify({ side: mine }) }).catch(() => {});
     did = true;
   }
+  // abgeschlossene Angebote serverseitig löschen + lokal entfernen
+  for (const id of finished) {
+    api(`/api/request/${encodeURIComponent(id)}`, { method: "DELETE", body: JSON.stringify({ by: STATE.trade.identity.id }) }).catch(() => {});
+  }
+  if (finished.length) STATE.trade.requests = STATE.trade.requests.filter((r) => !finished.includes(r.id));
   if (did) {
     save(); refreshStats();
     uploadCollection().catch(() => {});
@@ -818,8 +828,10 @@ function viewOnLive() {
   const giveIds = tradeSort(Object.keys(iGive));
   const getIds = tradeSort(Object.keys(iGet));
   const li = (ids, map, markNew) => ids.length
-    ? ids.map((id) => `<li>${escapeHtml(cardById[id].label)} · ${escapeHtml((STATE.names[id] ?? cardById[id].name) || "")} <b>×${map[id]}</b>${
-        markNew && tradeCountOf(id) === 0 ? ` <span class="s-tag neu">✨ neu</span>` : ""}</li>`).join("")
+    ? ids.map((id) => {
+        const neu = markNew && tradeCountOf(id) === 0 ? `<span class="s-tag neu">✨ neu</span>` : "";
+        return `<li><span class="ml-card">${escapeHtml(cardById[id].label)} · ${escapeHtml((STATE.names[id] ?? cardById[id].name) || "")}</span><span class="ml-meta">${neu}<b>×${map[id]}</b></span></li>`;
+      }).join("")
     : `<li class="muted">—</li>`;
   const mine = iAmFrom ? "from" : "to";
   const done = req.status === "done" || (req.executedBy && req.executedBy[mine]);
@@ -866,6 +878,20 @@ function viewOnLive() {
       <ul class="trade-mini-list">${li(giveIds, iGive, false)}</ul>
     </div>
     ${actions}`;
+}
+
+// Wird vom globalen „Alles zurücksetzen" aufgerufen: Lobby best effort verlassen.
+function tradeResetCleanup() {
+  try {
+    const t = STATE.trade;
+    if (t && t.group && t.identity && t.serverUrl) {
+      const base = t.serverUrl.replace(/\/$/, "");
+      fetch(`${base}/api/group/${encodeURIComponent(t.group.id)}/leave`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ member: t.identity.id }), keepalive: true,
+      }).catch(() => {});
+    }
+  } catch (e) {}
 }
 
 async function leaveGroup() {

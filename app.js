@@ -465,9 +465,21 @@ function importData() {
   inp.click();
 }
 function resetAll() {
-  if (!confirm("Wirklich alles zurücksetzen (Karten, Anzahl, Glanz, Namen)?")) return;
-  STATE = { counts: {}, shiny: {}, names: {}, collapsed: {}, partner: null, tradeWanted: {} }; prevComplete = new Set();
-  save(); renderOverview(); toast("Zurückgesetzt");
+  if (!confirm("Wirklich ALLES zurücksetzen?\n\nSammlung, Anzahl, Glanz, Namen, Tausch und Lobby werden gelöscht – die App wird komplett neu gestartet.")) return;
+  // Lobby möglichst sauber verlassen (best effort), dann lokalen Speicher leeren
+  try { if (typeof tradeResetCleanup === "function") tradeResetCleanup(); } catch (e) {}
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem("paniniWM2026.v1");
+  } catch (e) {}
+  toast("Wird neu gestartet …");
+  // Caches leeren für einen echten Neustart, dann neu laden
+  const reload = () => location.reload();
+  if (window.caches && caches.keys) {
+    caches.keys().then((keys) => Promise.all(keys.map((k) => caches.delete(k)))).finally(reload);
+  } else {
+    reload();
+  }
 }
 
 /* ======================================================================

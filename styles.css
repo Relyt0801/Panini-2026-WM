@@ -66,11 +66,9 @@ body {
 .logo {
   width: 42px; height: 42px; flex-shrink: 0;
   display: grid; place-items: center;
-  border-radius: 13px;
-  background: linear-gradient(140deg, rgba(52, 224, 161, 0.2), rgba(124, 107, 255, 0.2));
-  border: 1px solid var(--line-strong);
+  background: none; border: none;        /* kein Kasten – Hintergrund scheint durch */
 }
-.logo-ball { font-size: 22px; filter: drop-shadow(0 4px 6px rgba(0,0,0,.5)); }
+.logo-ball { font-size: 30px; filter: drop-shadow(0 3px 7px rgba(0,0,0,.55)); }
 .kicker { display: none; }
 .hero h1 {
   font-family: "Sora", "Inter", sans-serif;
@@ -679,8 +677,15 @@ select:focus { outline: none; border-color: var(--accent-2); }
 
 /* Tausch-Block & Zeilen */
 .trade-avail { font-size: 11px; color: var(--muted-2); white-space: nowrap; }
-.trade-mini-list { margin: 8px 0 0; padding-left: 20px; font-size: 13px; line-height: 1.7; color: var(--muted-2); }
+.trade-mini-list { list-style: none; margin: 8px 0 0; padding: 0; font-size: 13px; color: var(--muted-2); }
+.trade-mini-list li { display: flex; align-items: center; gap: 10px; padding: 5px 0; }
+.trade-mini-list li.muted { display: block; }
+.trade-mini-list .ml-card { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trade-mini-list .ml-meta { flex: none; display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .trade-mini-list b { color: var(--gold); }
+
+/* Builder-Zeile: „neu"-Tag + Anzahl bündig rechts (vor dem Stepper) */
+.trade-meta { flex: none; display: flex; align-items: center; gap: 8px; margin-left: auto; }
 
 .trade-confirm-bar {
   position: sticky; bottom: 8px; display: flex; align-items: center; justify-content: space-between;
